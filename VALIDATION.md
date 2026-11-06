@@ -1,5 +1,9 @@
 # Discovery suite validation record
 
+The web-app release extends the passing TypeScript count to 337 tests, including 44 new filter, export, validation, and API checks. The full runner passes 332 Python tests, strict application and harness TypeScript checks, the Vite production build, all 337 TypeScript tests, exact parity for 132 contract cases, and the existing coverage/report gates.
+
+Browser validation covers desktop and 375px mobile main flows with no observed JavaScript page errors or horizontal mobile overflow. The pilot database additionally passed real write-only RPC, required-consent, duplicate-registration, denied public SELECT, and denied direct INSERT checks; these are pilot-intake checks, not production candidate-authorization validation.
+
 The complete local verification runner passed against the bundled reference evaluators. These results validate the test harness and documented policy contract, not a production service, PostgreSQL function, HTTP endpoint, or row-level-security policy.
 
 ## Observed results

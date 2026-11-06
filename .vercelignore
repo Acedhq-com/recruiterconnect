@@ -1,0 +1,10 @@
+.git/
+.venv/
+node_modules/
+reports/
+memory/
+.env
+.env.*
+python/
+requirements-ci.txt
+__pycache__/

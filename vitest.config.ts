@@ -4,7 +4,7 @@ const production = process.env.DISCOVERY_REQUIRE_PRODUCTION === "1";
 
 export default defineConfig({
   test: {
-    include: ["typescript/tests/**/*.test.ts"],
+    include: ["typescript/tests/**/*.test.ts", "web-tests/**/*.test.ts"],
     testTimeout: 10_000,
     reporters: ["default", "junit"],
     outputFile: { junit: "reports/typescript-junit.xml" },

@@ -7,3 +7,9 @@ __pycache__/
 .ruff_cache/
 .coverage
 reports/
+.env
+.env.*
+!.env.example
+.vercel/
+dist/
+.vercel

@@ -29,6 +29,7 @@ def main() -> None:
         [python, "-m", "ruff", "format", "--check", "python", "scripts"],
         [python, "-m", "pytest", *pytest_options],
         [npm, "run", "typecheck"],
+        [npm, "run", "build"],
         [npm, "test"],
         [npm, "run", "export:contract"],
         [python, "-m", "scripts.check_parity"],

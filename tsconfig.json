@@ -11,8 +11,9 @@
     "useUnknownInCatchVariables": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["typescript/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"]
+  "include": ["typescript/**/*.ts", "scripts/**/*.ts", "web-tests/**/*.ts", "vitest.config.ts"]
 }

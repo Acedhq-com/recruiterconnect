@@ -1,5 +1,13 @@
 # RecruiterConnect discovery rule test suite
 
+## RecruiterConnect web app
+
+The repository now also contains a responsive, Vercel-ready product preview with additional hiring filters, anonymous shortlists, saved searches, a candidate-control simulation, proposed pilot pricing, and real private pilot-interest capture. The directory and introduction workflows remain clearly labeled synthetic demonstrations; there are no live candidate accounts or payments.
+
+See `WEB-APP.md` for setup, deployment, and security boundaries, `FLOWS.md` for browser acceptance coverage, and `REVENUE-PLAN.md` for the proposed path to a paid pilot. `npm run dev` starts the web app; the existing cross-language contract tests are still part of the complete verification runner.
+
+## Original contract suite
+
 Runnable Python and TypeScript contract tests for candidate-controlled recruiter discovery. Both languages consume the same hand-authored fixtures and expected decisions. The supplied reference implementations make the suite executable without an application checkout; they are not the previous Supabase implementation and do not validate its SQL, row-level security, or HTTP endpoints.
 
 This initializes the previously empty `storyshaw2-hue/recruiterconnect` repository. There is no production discovery service in this checkout yet, so the active CI check is explicitly a reference-harness check, not a production-authorization approval.
