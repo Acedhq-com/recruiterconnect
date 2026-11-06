@@ -1,0 +1,43 @@
+{
+  "agency": {
+    "memberships": [
+      {
+        "id": "membership-a", "account_id": "recruiter-a", "company_id": "agency-a",
+        "status": "verified", "valid_from_ms": 1799999000000,
+        "expires_at_ms": 1800001000000, "revoked_at_ms": null
+      }
+    ],
+    "candidate": {
+      "rules": [
+        { "candidate_id": "candidate-1", "company_id": "agency-a", "effect": "allow", "scope": { "kind": "company" } },
+        { "candidate_id": "candidate-1", "company_id": "company-a", "effect": "allow", "scope": { "kind": "company" } }
+      ]
+    },
+    "mandates": [
+      {
+        "agency_id": "agency-a", "hiring_company_id": "company-a", "status": "verified",
+        "valid_from_ms": 1799999000000, "expires_at_ms": 1800001000000, "revoked_at_ms": null
+      }
+    ]
+  },
+  "dual_membership": {
+    "memberships": [
+      {
+        "id": "membership-a", "account_id": "recruiter-a", "company_id": "company-a",
+        "status": "verified", "valid_from_ms": 1799999000000,
+        "expires_at_ms": 1800001000000, "revoked_at_ms": null
+      },
+      {
+        "id": "membership-b", "account_id": "recruiter-a", "company_id": "company-b",
+        "status": "verified", "valid_from_ms": 1799999000000,
+        "expires_at_ms": 1800001000000, "revoked_at_ms": null
+      }
+    ]
+  },
+  "affiliate_chain": {
+    "affiliations": [
+      { "company_id": "company-a", "related_company_id": "affiliate-x", "review_status": "verified" },
+      { "company_id": "affiliate-x", "related_company_id": "employer-x", "review_status": "verified" }
+    ]
+  }
+}

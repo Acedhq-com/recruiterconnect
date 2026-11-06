@@ -1,0 +1,44 @@
+[project]
+name = "discovery-rule-contract-tests"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+test = [
+  "pytest",
+  "pytest-cov",
+  "hypothesis",
+  "ruff",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["python"]
+testpaths = ["python/tests"]
+addopts = "-ra --strict-config --strict-markers --junitxml=reports/python-junit.xml --cov=discovery_contract.reference --cov-branch --cov-report=term-missing --cov-report=xml:reports/python-coverage.xml --cov-fail-under=95"
+xfail_strict = true
+filterwarnings = ["error"]
+markers = [
+  "contract: shared, hand-authored policy decisions",
+  "property: generated policy invariants",
+  "isolation: tenant and request-to-request separation",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["discovery_contract.reference"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+exclude_also = ["if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["discovery_contract", "scripts"]

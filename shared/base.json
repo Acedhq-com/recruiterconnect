@@ -1,0 +1,49 @@
+{
+  "now_ms": 1800000000000,
+  "auth": { "account_id": "recruiter-a" },
+  "request": { "candidate_id": "candidate-1", "opportunity_id": "opportunity-a" },
+  "account": { "id": "recruiter-a", "role": "recruiter", "status": "active" },
+  "candidate": {
+    "id": "candidate-1",
+    "policy": { "candidate_id": "candidate-1", "active": true, "mode": "selected", "version": 1 },
+    "current_employer_ids": ["employer-x"],
+    "rules": [
+      { "candidate_id": "candidate-1", "company_id": "company-a", "effect": "allow", "scope": { "kind": "company" } }
+    ],
+    "summary": {
+      "candidateId": "candidate-1",
+      "headline": "Experienced professional",
+      "skills": ["Analysis", "Reporting"],
+      "experienceBand": "3-5",
+      "workPreference": "remote"
+    },
+    "identity": { "fullName": "Synthetic Candidate", "email": "candidate@example.com" },
+    "identity_grants": []
+  },
+  "memberships": [
+    {
+      "id": "membership-a",
+      "account_id": "recruiter-a",
+      "company_id": "company-a",
+      "status": "verified",
+      "valid_from_ms": 1799999000000,
+      "expires_at_ms": 1800001000000,
+      "revoked_at_ms": null
+    }
+  ],
+  "opportunity": {
+    "id": "opportunity-a",
+    "membership_id": "membership-a",
+    "hiring_company_id": "company-a",
+    "status": "open"
+  },
+  "companies": [
+    { "id": "company-a", "kind": "employer", "verified": true, "active": true, "name": "Harbor Example" },
+    { "id": "company-b", "kind": "employer", "verified": true, "active": true, "name": "Ridge Example" },
+    { "id": "agency-a", "kind": "agency", "verified": true, "active": true, "name": "Agency Example" },
+    { "id": "employer-x", "kind": "employer", "verified": true, "active": true, "name": "Current Employer Example" },
+    { "id": "affiliate-x", "kind": "employer", "verified": true, "active": true, "name": "Affiliate Example" }
+  ],
+  "mandates": [],
+  "affiliations": []
+}
