@@ -20,6 +20,8 @@ import { downloadFile, shortlistCsv } from "./lib/export.js";
 import { evaluate } from "../../typescript/src/reference.js";
 import baseContext from "../../shared/base.json";
 import { Sidebar, SidebarProvider } from "./components/ui/sidebar.js";
+import AccountPage from "./AccountPage.js";
+import { PUBLIC_BRAND } from "../../shared/account-schema.js";
 
 type ModalState = { kind: "profile"; candidate: Candidate } | { kind: "intro"; candidate: Candidate }
   | { kind: "pilot"; plan: "candidate" | "founding" | "team" }
@@ -31,6 +33,7 @@ const nav = [
   { href: "/shortlist", label: "Your shortlist", icon: Bookmark },
   { href: "/introductions", label: "Introductions", icon: Handshake },
   { href: "/privacy", label: "Candidate controls", icon: ShieldCheck },
+  { href: "/account", label: "Your account", icon: Users },
 ];
 
 function Dialog({ title, onClose, children, wide = false }: {
@@ -75,7 +78,7 @@ function App() {
     JSON.stringify(filters[key as keyof Filters]) !== JSON.stringify(defaultFilters[key as keyof Filters])).length;
   const pending = requests.filter(request => request.status !== "Withdrawn").length;
   useEffect(() => {
-    document.title = `${location === "/privacy" ? "Candidate controls" : location === "/pricing" ? "Pilot & pricing" : isShortlist ? "Your shortlist" : location === "/introductions" ? "Introductions" : "Discover talent"} | RecruiterConnect`;
+    document.title = `${location === "/account" ? "Your account" : location === "/privacy" ? "Candidate controls" : location === "/pricing" ? "Pilot & pricing" : isShortlist ? "Your shortlist" : location === "/introductions" ? "Introductions" : "Discover talent"} | ${PUBLIC_BRAND}`;
     setMobileMenu(false);
     setNotice("");
   }, [location, isShortlist]);
@@ -103,7 +106,7 @@ function App() {
     <SidebarProvider style={{ "--sidebar-width": "220px" } as CSSProperties}>
     <div className="app-shell w-full">
       <Sidebar collapsible="none" role="complementary" aria-label="Workspace navigation" className={`sidebar ${mobileMenu ? "is-open" : ""}`}>
-        <Link href="/" className="wordmark" data-testid="link-home" onClick={() => setMobileMenu(false)}>recruiter<span>connect</span><span className="brand-period">.</span></Link>
+        <Link href="/" className="wordmark" data-testid="link-home" onClick={() => setMobileMenu(false)} aria-label="Find Work Privately home">findwork<span>privately</span><span className="brand-period">.</span></Link>
         <div className="workspace"><span className="workspace-letter">H</span><span>Harbor workspace<small>Interactive demo</small></span><LockKeyhole size={14} /></div>
         <p className="nav-label">YOUR WORKSPACE</p>
         <nav aria-label="Main navigation">{nav.map(item => <Link key={item.href} href={item.href}
@@ -123,12 +126,13 @@ function App() {
       <div className="workspace-main">
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Toggle navigation" aria-expanded={mobileMenu} data-testid="button-mobile-menu" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={21} /></button>
-          <div className="breadcrumb">Workspace <ChevronRight size={14} /><span>{location === "/privacy" ? "Candidate controls" : location === "/pricing" ? "Pilot & pricing" : isShortlist ? "Your shortlist" : location === "/introductions" ? "Introductions" : "Discover talent"}</span></div>
+          <div className="breadcrumb">Workspace <ChevronRight size={14} /><span>{location === "/account" ? "Your account" : location === "/privacy" ? "Candidate controls" : location === "/pricing" ? "Pilot & pricing" : isShortlist ? "Your shortlist" : location === "/introductions" ? "Introductions" : "Discover talent"}</span></div>
           <span className="topbar-status"><ShieldCheck size={15} /> Consent comes first</span>
+          <Link href="/account" className="button secondary account-link" aria-label="Your account" data-testid="button-account"><Users size={16} /><span>Your account</span></Link>
           <button className="avatar-button" aria-label="About this demo workspace" data-testid="button-workspace-info" onClick={() => setModal({ kind: "trust" })}>H</button>
         </header>
         <main id="main-content" tabIndex={-1}>
-          <div className="demo-banner"><span className="status-dot" /><strong>Interactive preview</strong><span>All profiles are synthetic. No real candidate data or messages.</span></div>
+          <div className="demo-banner"><span className="status-dot" /><strong>{location === "/account" ? "Private account beta" : "Interactive preview"}</strong><span>{location === "/account" ? "Private account setup only. Production discovery and billing are not enabled." : "All profiles are synthetic. No real candidate data or messages."}</span></div>
           {notice && <div className="notice" role="status" data-testid="status-notice"><Check size={17} /><span>{notice}</span><button className="icon-button" aria-label="Dismiss update" onClick={() => setNotice("")}><X size={16} /></button></div>}
           {isDiscovery && <>
             <section className="page-heading">
@@ -157,7 +161,7 @@ function App() {
                 <div className="filter-footnote"><LockKeyhole size={15} /><p>Only job-related filters. No protected-characteristic screening.</p></div>
               </aside>
               <section className="results" aria-label="Candidate results">
-                <div className="results-heading"><div><h2 data-testid="text-result-count">{results.length} {isShortlist ? "shortlisted" : "sample"} profiles</h2><span>Meet the experience. Not the identity.</span></div><div className="result-tools">{isShortlist && savedCandidates.length > 0 && <button className="icon-button" data-testid="button-export-shortlist" aria-label="Export anonymous shortlist CSV" onClick={() => downloadFile("recruiterconnect-sample-shortlist.csv", shortlistCsv(savedCandidates))}><ArrowDownToLine size={19} /></button>}<label className="sort-label"><span>Sort:</span><select data-testid="select-sort" aria-label="Sort candidates" value={sort} onChange={event => setSort(event.target.value)}><option value="default">Default order</option><option value="experience">Most experience</option><option value="salary">Lowest salary first</option></select></label></div></div>
+                <div className="results-heading"><div><h2 data-testid="text-result-count">{results.length} {isShortlist ? "shortlisted" : "sample"} profiles</h2><span>Meet the experience. Not the identity.</span></div><div className="result-tools">{isShortlist && savedCandidates.length > 0 && <button className="icon-button" data-testid="button-export-shortlist" aria-label="Export anonymous shortlist CSV" onClick={() => downloadFile("find-work-privately-sample-shortlist.csv", shortlistCsv(savedCandidates))}><ArrowDownToLine size={19} /></button>}<label className="sort-label"><span>Sort:</span><select data-testid="select-sort" aria-label="Sort candidates" value={sort} onChange={event => setSort(event.target.value)}><option value="default">Default order</option><option value="experience">Most experience</option><option value="salary">Lowest salary first</option></select></label></div></div>
                 {activeCount > 0 && <div className="active-filters"><span><Filter size={13} />{activeCount} active filters</span><button className="text-button" data-testid="button-clear-all" onClick={() => setFilters({ ...defaultFilters })}>Clear all</button></div>}
                 {results.length > 0 ? <div className="candidate-grid">{results.map(candidate => <CandidateCard key={candidate.id} candidate={candidate} saved={savedIds.includes(candidate.id)} onSave={() => toggleSave(candidate.id)} onOpen={() => setModal({ kind: "profile", candidate })} />)}</div> : <div className="empty-state"><FileSearch size={36} /><h2>{isShortlist && !savedIds.length ? "Start with a promising profile." : "A little room can reveal more talent."}</h2><p>{isShortlist && !savedIds.length ? "Bookmark a profile in Discover talent to keep it here during this demo session." : "Try fewer filters or a broader budget. Your next great conversation may be one adjustment away."}</p>{isShortlist && !savedIds.length ? <Link className="button primary" href="/" data-testid="link-browse-empty">Discover talent <ArrowRight size={16} /></Link> : <button className="button primary" data-testid="button-reset-empty" onClick={() => setFilters({ ...defaultFilters })}>Reset filters</button>}</div>}
                 <div className="results-footer"><ShieldCheck size={15} /><span>These {candidates.length} fictional profiles demonstrate the product. There is no live candidate directory yet.</span></div>
@@ -167,7 +171,8 @@ function App() {
           {location === "/introductions" && <section className="secondary-page"><p className="eyebrow">EVERY CONVERSATION STARTS WITH A YES</p><h1>Introductions, not cold outreach.</h1><p className="page-description">Candidates choose which opportunity is worth a conversation. These requests are simulated and never sent.</p>{requests.length === 0 ? <div className="empty-state"><Handshake size={38} /><h2>A better first conversation.</h2><p>Open a sample profile and try an introduction. Your request will appear here without exposing anyone’s identity.</p><Link className="button primary" href="/" data-testid="link-browse-introductions">Explore profiles <ArrowRight size={16} /></Link></div> : <div className="intro-list">{requests.map(request => <article className="intro-card" key={request.id} data-testid={`request-${request.candidateId}`}><span className="mini-eyebrow">SIMULATED REQUEST · {request.candidateId}</span><h2>{request.role}</h2><p>{request.company} · {request.salary}</p><blockquote>{request.message}</blockquote><div className="intro-card-footer"><span className={`badge ${request.status === "Withdrawn" ? "neutral" : ""}`}><Clock3 size={13} />{request.status}</span>{request.status !== "Withdrawn" && <button className="text-button" data-testid={`withdraw-${request.candidateId}`} onClick={() => setRequests(previous => previous.map(item => item.id === request.id ? { ...item, status: "Withdrawn" } : item))}>Withdraw request</button>}</div></article>)}</div>}</section>}
           {location === "/privacy" && <PrivacyPage onTrust={() => setModal({ kind: "trust" })} />}
           {location === "/pricing" && <PricingPage onJoin={plan => setModal({ kind: "pilot", plan })} />}
-          {!["/", "/shortlist", "/introductions", "/privacy", "/pricing"].includes(location) && <section className="empty-state"><h1>Let’s get you back to the right place.</h1><p>This page isn’t part of the workspace. Your demo session is still here.</p><Link href="/" className="button primary">Discover talent</Link></section>}
+          {location === "/account" && <AccountPage />}
+          {!["/", "/shortlist", "/introductions", "/privacy", "/pricing", "/account"].includes(location) && <section className="empty-state"><h1>Let’s get you back to the right place.</h1><p>This page isn’t part of the workspace. Your demo session is still here.</p><Link href="/" className="button primary">Discover talent</Link></section>}
         </main>
       </div>
     </div>
