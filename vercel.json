@@ -7,6 +7,7 @@
     "api/index.ts": { "maxDuration": 30 }
   },
   "rewrites": [
+    { "source": "/api/jobs", "destination": "/api" },
     { "source": "/api/:path*", "destination": "/api" }
   ],
   "headers": [

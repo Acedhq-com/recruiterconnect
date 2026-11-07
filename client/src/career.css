@@ -146,7 +146,7 @@
 .career-job-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-4) var(--space-5); content-visibility: auto; contain-intrinsic-size: auto 220px; display: flex; flex-direction: column; }
 .career-company-line { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-bottom: var(--space-1); color: var(--color-muted); }
 .career-source-badge { font-size: var(--text-xs); color: var(--color-muted); }
-.career-role-button { display: block; text-align: left; font-weight: 700; color: var(--color-ink); min-height: 44px; width: 100%; overflow-wrap: anywhere; }
+.career-role-button { display: block; padding: 0; text-align: left; font-weight: 700; color: var(--color-ink); min-height: 44px; width: 100%; overflow-wrap: anywhere; }
 .career-role-button:hover { color: var(--color-green); }
 .career-job-card > p { color: var(--color-muted); overflow-wrap: anywhere; }
 .career-job-facts { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-block: var(--space-3); color: var(--color-muted); }
@@ -172,6 +172,7 @@
 .career-job-detail > .button { margin-top: var(--space-4); }
 .career-muted { color: var(--color-muted); font-size: var(--text-xs); line-height: 1.6; }
 .career-job-detail > .career-muted { margin-top: var(--space-2); }
+.career-job-detail > label { display: grid; gap: var(--space-2); margin-top: var(--space-4); color: var(--color-muted); }
 .career-evidence { margin: var(--space-5) 0; }
 .career-evidence > div, .career-privacy-panel dl > div { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: var(--space-4); border-top: 1px solid var(--color-border); padding-block: var(--space-3); }
 .career-evidence dt, .career-privacy-panel dt { color: var(--color-muted); }

@@ -241,6 +241,7 @@ function Jobs() {
           {[["Workplace", `${selectedDetails.workplace} · ${selectedDetails.workplaceBasis}`], ["Pay", selectedDetails.payText || "Not stated"],
             ["Pay basis", selectedDetails.payBasis], ["Pay note", selectedDetails.salaryNote || "Confirm the applicable location and pay tier with the employer."], ["Title level", `${selectedDetails.level} · ${selectedDetails.levelBasis}`],
             ["Travel", selectedDetails.travelEvidence || "Not specified"], ["Interview", selectedDetails.interviewEvidence || "Not specified"],
+            ["Source status", selectedDetails.availability === "employer_listed" ? "Employer listed at last successful check" : "Source recheck failed; recheck the employer"],
             ["Source check", formatDate(selectedDetails.checkedAt)]].map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}
         </dl><h3>Employer excerpt</h3><p className="career-excerpt">{selectedDetails.excerpt || "Read the full employer posting for details."}</p>
           <p className="career-muted">Excerpt only. No personal resume match has been assessed.</p>
