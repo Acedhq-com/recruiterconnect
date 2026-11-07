@@ -22,6 +22,31 @@ This inventory covers the existing deployed app, now being connected to the owne
 - Next: production discovery permissions, then recruiter verification, then billing, then automatic redeployment. Do not report those later items complete merely because private accounts exist.
 - Existing Supabase pilot signups must be preserved. Do not move, rename, or alter the other ACED application.
 
+## Schema-first job research acceptance
+
+- Baseline: the current production site opens as Find Work Privately with the combined career workspace and 805 employer-feed listings at the pre-edit browser check. The exact `/api/jobs` routing fix is already published; do not redo that release.
+- Reuse the uploaded workflow's schema-first provider discovery, bounded searches, explicit unknowns, and evidence-based eligibility rules. Do not publish the uploaded instructions, personal tracker snapshot, resumes, or owner-specific search profile.
+- A real operator smoke test returned three LinkedIn listings through ReefAPI's documented REST endpoint. The saved header credential did not authenticate MCP execution, so use keyless MCP discovery followed by documented `x-api-key` REST execution. Never mislabel this as the owner's Copilot connection automatically moving to Vercel.
+- Implement server-only research behind the existing verified, active candidate boundary, strict same-origin JSON checks, stale-account rejection, an explicit owner allowlist, a separate feature flag, and server-only API-key configuration. Guests, recruiters, inactive accounts, and non-allowlisted candidates must cause zero paid provider requests.
+- Only the known LinkedIn jobs search action is executable. Reject caller-selected owners, engines, endpoints, credentials, unknown fields, unsupported enum filters, and unbounded result counts. Discover and validate the live action schema before execution; do not retry silently ignored filters.
+- Preserve source facts without asserting verified remote residency eligibility, employer-posted salary, qualifications, match scores, interview probabilities, or hiring urgency. Source failure means unavailable, not closed; only positive closure evidence may archive a lead.
+- These first-stage research results are not silently inserted into the existing employer-feed snapshot schema or private application records. No resume upload, application, outreach, billing, database migration, or production setting change is part of this change.
+- Add a private Research navigation item and screen. Guests see a clear verified-account gate, not a working-looking paid-search button. Allowlisted candidate controls include role, location, posting window, workplace, seniority, employment, and a 1–20 result limit with explicit provider-credit acknowledgement.
+- Research UI checks: disabled guest/recruiter/unconfigured states; validation; one search request; pending/empty/failure recovery; source facts and missing pay; literal Unicode/text; outbound posting link plus selectable URL; expandable description; no save/application shortcut; no automatic retries; clear results on identity/permission change and navigation.
+- Signed-in UI checks use explicitly synthetic, isolated browser mocks only. They do not establish real email delivery, a production sign-in, or a live Vercel provider connection.
+- Recheck all existing career and recruiter-demo flows, exports, failure states, desktop/mobile resizing, and console errors. Run the complete Python/TypeScript CI runner plus provider-contract and private-route regressions.
+- No production push, merge, publication, credential transfer, email-gate change, or provider enablement is authorized by the earlier routing-fix approval. Report the local implementation and remaining launch gates accurately.
+
+## Research verification checkpoint
+
+- The local full runner passes 332 Python tests, 641 TypeScript tests, and 132 exact expected parity decisions, with type checking, build, coverage gates, freshness, and no-skips checks intact. The added research suites contain 136 tests; no paid provider requests are made by CI.
+- The actual operator API-key test returned three LinkedIn listings. The new application adapter and private route are covered by schema-derived unit/integration fixtures; Vercel runtime credentials and real verified-account research are not yet configured or certified.
+- Browser evidence covers validation/credit acknowledgement, source and metadata failures, empty/recovered results, source-link activation and URL fallback, literal text, unknown evidence, expanded descriptions, and exact-owner request headers. Synthetic account A's delayed result remained absent after signing into synthetic account B.
+- Guest, recruiter, and unconfigured research remain visibly disabled. Actual local guest access to the new endpoint returned 503 at the existing email gate, without a provider request. Public sign-in still reports `authEnabled: false`.
+- Desktop/mobile/desktop resizing, a short window, long unbroken title/employer/description text, no page errors, and visible text contrast passed. A new-card wrapping issue was corrected and rechecked; no other interface redesign was made.
+- Existing career and recruiter-demo controls, tracking/export, factual material drafts, source failure/recovery, simulated privacy/introduction cycles, and pilot validation/failure were rechecked. All synthetic browser work remained isolated and transient.
+- The feature is held for review in the existing local repository/preview. No remote Git push, merge, production deployment, runtime credential setup, email setting change, real recruiter access, or billing activation is included.
+
 ## Earlier account checkpoint
 
 - The existing production preview loads at https://findworkprivately.com/ with 12 synthetic profiles. The www address redirects to the apex. Production still has the RecruiterConnect title; the new branding and private-account interface have not been deployed.
