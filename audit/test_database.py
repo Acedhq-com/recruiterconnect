@@ -220,7 +220,16 @@ def test_rc01_waiting_write_rechecks_authority_after_lock(actor, authority, oper
 @pytest.mark.parametrize("authority", ["deletion", "suspension", "session_revocation"])
 @pytest.mark.parametrize(
     "operation",
-    ["background", "workflow", "document", "remove_document", "profile", "onboard", "employer", "block"],
+    [
+        "background",
+        "workflow",
+        "document",
+        "remove_document",
+        "profile",
+        "onboard",
+        "employer",
+        "block",
+    ],
 )
 def test_rc01_already_authorized_write_serializes_authority_change(actor, authority, operation):
     if operation == "remove_document":
@@ -648,7 +657,8 @@ def test_phase1_recruiter_accounts_cannot_use_candidate_controls(recruiter_actor
 
 
 @pytest.mark.parametrize(
-    "value", ["", " ", "x", "a" * 151, "bad\nname", "!!", ". . ."],
+    "value",
+    ["", " ", "x", "a" * 151, "bad\nname", "!!", ". . ."],
 )
 @pytest.mark.parametrize("function", ["save_my_current_employer", "add_my_block"])
 def test_phase1_invalid_company_names_are_rejected(actor, function, value):
