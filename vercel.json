@@ -4,7 +4,7 @@
   "outputDirectory": "dist/public",
   "framework": "vite",
   "functions": {
-    "api/index.ts": { "maxDuration": 10 }
+    "api/index.ts": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" }
@@ -17,7 +17,6 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
       ]
-    },
-    { "source": "/api/:path*", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+    }
   ]
 }

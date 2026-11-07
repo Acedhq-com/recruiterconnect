@@ -1,8 +1,10 @@
 # RecruiterConnect discovery rule test suite
 
-## RecruiterConnect web app
+## Find Work Privately career workspace
 
-The repository now also contains a responsive, Vercel-ready product preview with additional hiring filters, anonymous shortlists, saved searches, a candidate-control simulation, proposed pilot pricing, and real private pilot-interest capture. The directory and introduction workflows remain clearly labeled synthetic demonstrations; there are no live candidate accounts or payments.
+The primary app combines real employer job feeds, application tracking, a factual resume/cover-letter/interview-preparation studio, private-background editing, and gated owner-only account storage. The public adapter is reused from the same owner's `jobtracker` repository without importing personal tracker data or resumes. Guest work is explicitly tab-only; document generation runs locally from supplied facts, not an undisclosed paid AI service.
+
+The earlier recruiter directory, shortlists, company-control simulation, and pilot intake remain available in a separate, clearly synthetic recruiter preview. Public sign-in and cloud saving stay disabled until verification email is configured and tested. Real recruiter access, payments, automatic applications, and automatic personal-data import are not enabled.
 
 See `WEB-APP.md` for setup, deployment, and security boundaries, `FLOWS.md` for browser acceptance coverage, and `REVENUE-PLAN.md` for the proposed path to a paid pilot. `npm run dev` starts the web app; the existing cross-language contract tests are still part of the complete verification runner.
 

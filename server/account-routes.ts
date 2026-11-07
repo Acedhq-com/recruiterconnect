@@ -45,22 +45,29 @@ function assertWrite(request: Request): void {
   } catch { throw new AccountError(403, "Open account sign-in directly on FindWorkPrivately.com."); }
 }
 
+export { assertWrite as assertAccountWrite, privateResponse as privateAccountResponse };
+export async function resolveAccountSession(request: Request, response: Response,
+  service: IAccountService, required = true): Promise<VerifiedSession | null> {
+  const cookies = readCookies(request);
+  const session = await service.resolve(cookies.access, cookies.refresh);
+  if (!session) {
+    if (cookies.access || cookies.refresh) writeCookies(response, null);
+    if (required) throw new AccountError(401, "Sign in with your email code to continue.");
+    return null;
+  }
+  const expectedOwner = request.get("X-Account-Id");
+  if (expectedOwner && expectedOwner !== session.user.id) {
+    throw new AccountError(409, "The signed-in account changed. Reload before changing private account details.");
+  }
+  if (session.tokens.accessToken !== cookies.access || session.tokens.refreshToken !== cookies.refresh) writeCookies(response, session);
+  return session;
+}
+
 export function registerAccountRoutes(app: Express, service: IAccountService = accountService): void {
   const meta = () => ({ authEnabled: service.enabled(), appOrigin: process.env.APP_ORIGIN ?? PUBLIC_APP_ORIGIN,
     method: "email-code" as const });
-  async function current(request: Request, response: Response, required = true): Promise<VerifiedSession | null> {
-    const cookies = readCookies(request);
-    const session = await service.resolve(cookies.access, cookies.refresh);
-    if (!session) {
-      if (cookies.access || cookies.refresh) writeCookies(response, null);
-      if (required) throw new AccountError(401, "Sign in with your email code to continue.");
-      return null;
-    }
-    if (session.tokens.accessToken !== cookies.access || session.tokens.refreshToken !== cookies.refresh) {
-      writeCookies(response, session);
-    }
-    return session;
-  }
+  const current = (request: Request, response: Response, required = true) =>
+    resolveAccountSession(request, response, service, required);
   async function envelope(session: VerifiedSession | null): Promise<PublicAccountSession> {
     const records = session ? await service.records(session) : { account: null, profile: null };
     if (session && records.account && records.account.user_id !== session.user.id) {

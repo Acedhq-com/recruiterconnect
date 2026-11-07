@@ -13,7 +13,8 @@ import { apiRequest, queryClient } from "./lib/queryClient.js";
 
 const sessionKey = ["/api/auth/session"];
 const loadSession = async (): Promise<PublicAccountSession> => (await apiRequest("GET", sessionKey[0]!)).json();
-const post = async <T,>(path: string, input: unknown): Promise<T> => (await apiRequest("POST", path, input)).json();
+const post = async <T,>(path: string, input: unknown, owner?: string): Promise<T> =>
+  (await apiRequest("POST", path, input, owner ? { "X-Account-Id": owner } : {})).json();
 function ErrorMessage({ error }: { error: Error | null }) {
   return error ? <p className="field-error" role="alert">{error.message}</p> : null;
 }
@@ -41,14 +42,18 @@ function FirstPartyAccount() {
   if (session.isPending) return <div className="settings-panel account-card" role="status"><LockKeyhole size={24} /><p>Checking your private session…</p></div>;
   if (session.error || !session.data) return <div className="settings-panel account-card"><h2>Account access is temporarily unavailable.</h2><ErrorMessage error={session.error} /><button className="button secondary" data-testid="button-retry-account" onClick={() => void session.refetch()}>Try again</button></div>;
   const data = session.data;
-  const accept = (value: PublicAccountSession) => queryClient.setQueryData(sessionKey, value);
+  const accept = (value: PublicAccountSession) => { if (value.user) setNotice(""); queryClient.setQueryData(sessionKey, value); };
+  const acceptSaved = (value: PublicAccountSession) => {
+    const current = queryClient.getQueryData<PublicAccountSession>(sessionKey);
+    if (current?.user?.id === data.user?.id && value.user?.id === data.user?.id) accept(value);
+  };
   return <>{notice && <div className="notice" role="status"><Check size={17} /><span>{notice}</span></div>}
     {!data.user ? <SignInPanel enabled={data.authEnabled} onSignedIn={accept} /> : <div className="account-layout">
       <div>
-        {!data.account ? <OnboardingPanel email={data.user.email} onSaved={accept} />
-          : <PrivateWorkspace data={data} onSaved={accept} />}
+        {!data.account ? <OnboardingPanel key={data.user.id} email={data.user.email} owner={data.user.id} onSaved={acceptSaved} />
+          : <PrivateWorkspace key={data.user.id} data={data} onSaved={acceptSaved} />}
       </div>
-      <AccountSafety data={data} onSaved={accept} onSignedOut={(revoked) => {
+      <AccountSafety key={data.user.id} data={data} onSaved={acceptSaved} onSignedOut={(revoked) => {
         accept({ ...data, user: null, account: null, profile: null });
         setNotice(revoked ? "Signed out of this browser." : "Signed out here. Server-side session revocation could not be confirmed; contact the operator if this persists.");
       }} />
@@ -95,9 +100,9 @@ function SignInPanel({ enabled, onSignedIn }: { enabled: boolean; onSignedIn: (v
   </div>;
 }
 
-function OnboardingPanel({ email, onSaved }: { email: string; onSaved: (value: PublicAccountSession) => void }) {
+function OnboardingPanel({ email, owner, onSaved }: { email: string; owner: string; onSaved: (value: PublicAccountSession) => void }) {
   const form = useForm<OnboardAccount>({ resolver: zodResolver(onboardAccountSchema), defaultValues: { kind: "candidate", displayName: "" } });
-  const mutation = useMutation({ mutationFn: (input: OnboardAccount) => post<PublicAccountSession>("/api/account/onboard", input), onSuccess: onSaved });
+  const mutation = useMutation({ mutationFn: (input: OnboardAccount) => post<PublicAccountSession>("/api/account/onboard", input, owner), onSuccess: onSaved });
   return <form className="settings-panel account-card" onSubmit={form.handleSubmit(input => mutation.mutate(input))}>
     <UserRound size={26} /><h2>Your email is verified.</h2><p className="account-email">{email}</p>
     <label className="field-label" htmlFor="account-name">Private display name</label>
@@ -140,7 +145,7 @@ function PrivateProfileForm({ account, profile, onSaved }: { account: PrivateAcc
     mutationFn: (input: ProfileValues) => post<PublicAccountSession>("/api/account/profile", {
       displayName: input.displayName, headline: input.headline, skills: input.skillsText.split(",").map(item => item.trim()).filter(Boolean),
       workPreference: input.workPreference, expectedVersion: input.expectedVersion,
-    }),
+    }, account.user_id),
     onSuccess: value => { onSaved(value); if (value.account && value.profile) form.reset(toProfileValues(value.account, value.profile)); setSaved(true); },
     onError: () => { void queryClient.invalidateQueries({ queryKey: sessionKey }); },
   });
@@ -164,8 +169,8 @@ function AccountSafety({ data, onSaved, onSignedOut }: { data: PublicAccountSess
   const [confirmation, setConfirmation] = useState("");
   const logout = useMutation({ mutationFn: () => post<{ revocationComplete: boolean }>("/api/auth/logout", {}),
     onSuccess: value => onSignedOut(value.revocationComplete) });
-  const deletion = useMutation({ mutationFn: () => post<PublicAccountSession>("/api/account/deletion-request", { confirmation }), onSuccess: value => { setConfirmation(""); onSaved(value); } });
-  const cancel = useMutation({ mutationFn: () => post<PublicAccountSession>("/api/account/cancel-deletion", {}), onSuccess: onSaved });
+  const deletion = useMutation({ mutationFn: () => post<PublicAccountSession>("/api/account/deletion-request", { confirmation }, data.user!.id), onSuccess: value => { setConfirmation(""); onSaved(value); } });
+  const cancel = useMutation({ mutationFn: () => post<PublicAccountSession>("/api/account/cancel-deletion", {}, data.user!.id), onSuccess: onSaved });
   return <aside className="visibility-preview account-safety"><p className="eyebrow">YOUR VERIFIED SIGN-IN</p><h2>Account access only.</h2><p className="account-email">{data.user!.email}</p>
     <div className="identity-lock"><ShieldCheck size={20} /><div><strong>Verified email is not recruiter verification.</strong><p>It never overrides candidate blocks or employer exclusions, grants company membership, or unlocks identity information.</p></div></div>
     <p className="fine-print">Private account data is protected by owner-only database rules. Signing out clears this browser’s cookies and requests revocation of this sign-in session.</p>

@@ -1,6 +1,19 @@
-# RecruiterConnect web app
+# Find Work Privately web app
 
-The app adds a functional, responsive recruiting-product preview to the existing Python/TypeScript security-contract repository. The original contract fixtures and reference evaluators remain intact.
+The app combines the public employer-feed adapter from the owner's job tracker with a candidate-controlled career workspace. The original Python/TypeScript discovery-contract fixtures and reference evaluators remain intact; the old synthetic recruiter preview is a separate area rather than the default home.
+
+## Combined workspace
+
+- **Find jobs:** The configured public Greenhouse, Ashby, and Lever employer boards, with check times, explicit source coverage, null-aware filters, and no fictional runtime fallback. These feeds are not a search of the whole web or a personalized resume match.
+- **My applications:** Saved employer references, stages, literal notes, next actions, applied/follow-up dates, archive/restore, and CSV with spreadsheet-formula prefix protection. Tracked roles remain available when absent from a refreshed feed.
+- **My background:** User-entered name, optional contact details, summary, skills, experience facts, and education. No personal tracker, private seed, or resume file is imported.
+- **Application studio:** Local, fact-based resume, cover-letter, and interview-preparation drafts; editable output; text/Markdown downloads and copy. No credentials or accomplishments are invented, and no paid model request or employer submission is made.
+- **Storage modes:** Guests use React memory only. Reloading or changing identity clears temporary work. Explicit cloud saving is available only to verified active candidate accounts after the account-email launch gate is completed.
+- **Privacy:** The career workspace is never used as a recruiter directory. Recruiter self-selection, cached browser identities, foreign user IDs, and account deletion/suspension cannot grant candidate-workspace authority.
+
+The existing dark, compact Calibri-first tracker direction is used for the career workspace, with bundled Carlito fallback fonts and their license. The recruiter preview retains its existing design and simulation disclosures.
+
+Routes are `/#/` (jobs), `/#/pipeline`, `/#/background`, `/#/studio`, `/#/workspace-privacy`, and `/#/account`. The synthetic directory is at `/#/recruiters`; its demo state resets when leaving that preview.
 
 ## Run
 
@@ -20,7 +33,7 @@ npm test
 python -m scripts.run_ci
 ```
 
-## Product boundary
+## Recruiter preview boundary
 
 - **Discovery:** Twelve explicitly synthetic, anonymous profiles; role/skill keyword search; profession, location, work arrangement, employment type, minimum/maximum experience, maximum annualized USD budget, and availability; sorting and recoverable empty states.
 - **Workspace:** Session-only shortlists, CSV export with formula-prefix neutralization, saved searches, profile details, and simulated introductions/withdrawal. No browser storage, real messages, real identities, or cross-session account promises.
@@ -30,7 +43,7 @@ python -m scripts.run_ci
 
 ## Deployment
 
-The root `vercel.json` builds `dist/public` with Vite and serves Express API routes from `api/index.ts`. `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are server runtime variables; no service-role key is used or needed.
+The root `vercel.json` builds `dist/public` with Vite and serves Express API routes from `api/index.ts`. `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are server runtime variables; no service-role key is used or needed. The 30-second function cap permits the adapter's bounded 12-second employer checks to finish. The public job response sets its own CDN cache header; all account, career, pilot, error, and unknown API responses remain non-cacheable.
 
 Keep `ALLOW_PREVIEW_PROXY` unset on Vercel. It is only for the private Computer preview backend and allows the opaque preview origin; production form requests require the site's own origin.
 
@@ -38,15 +51,23 @@ The linked Vercel project is `recruiterconnect` in workspace `aced2`; no other p
 
 ## Database and operations
 
-The new Supabase project is separate from other products. Its public schema contains only the private pilot-lead table and the bounded registration RPC; production recruiting identities and permissions are intentionally not stored here yet.
+The Supabase project is separate from other products. It contains private pilot leads, verified member accounts, non-discoverable private candidate profiles, and additive `career_backgrounds`, `career_workflows`, and `career_documents` tables. No prior rows or column types were changed by the career migration.
 
-The migrations enable RLS and revoke public direct table access. The RPC validates fields and explicit consent, enforces matching audience/plan, normalizes and deduplicates email/audience pairs, and serializes global caps of 100 new records per hour and 1,500 total. Caps are deliberate pilot safeguards, not a complete anti-bot solution.
+Career reads require the owner's active, verified candidate session under database RLS. Writes use fixed authenticated-only RPCs deriving the owner from `auth.uid()`, not a body/header owner claim. Stale browser identity headers are an additional consistency check, not authority. Optimistic versions prevent stale overwrites; pilot limits are 300 job workflows and 30 document drafts per account.
+
+`AUTH_EMAIL_READY` must stay unset or `0` until the sending subdomain is verified, Supabase SMTP and numeric-code templates are configured, and an authorized real sign-in email is tested. Never disable email confirmation to make the UI appear finished. Account cookies remain first-party, Secure/HttpOnly in production; tokens are not returned in JSON or browser storage.
+
+The owner-only SQL assertions in `supabase/tests/career_workspace.sql` run as authenticated/anonymous database roles with synthetic sessions inside a rollback-only transaction. They cover overlapping IDs across users, revocation, role boundaries, versions, literal text, deletion status, and anonymous denial. They do not prove SMTP delivery or a real browser Auth-provider round trip.
+
+The pilot migration enables RLS and revokes public direct table access. Its intake RPC validates fields and explicit consent, enforces matching audience/plan, normalizes and deduplicates email/audience pairs, and serializes global caps of 100 new records per hour and 1,500 total. Caps are deliberate pilot safeguards, not a complete anti-bot solution.
 
 The Supabase advisor's “RLS enabled, no policy” informational finding is expected because direct table access is intentionally denied. The anonymous `SECURITY DEFINER` warning is also intentional for this narrow write-only intake RPC; it has an empty search path, fixed SQL, no arbitrary identifiers, no read response, strict input limits, and no general CRUD authority. Review it before expanding the schema ([Supabase advisor explanations](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)).
 
 The owner can review and remove leads in the Supabase dashboard. Do not grant browser users SELECT to make an admin page easier; implement a separately authenticated owner-only admin surface if needed. No automatic retention/deletion schedule is claimed in this release.
 
 ## QA
+
+Career acceptance additionally covers real feed loading, all 13 filters, missing-source behavior without fabricated fallback, retained applications, factual drafts of all three kinds, browser downloads, zero guest private-write requests, reload clearing, mock account save/reload/sign-out/switching, transient Auth failure hiding, and desktop/mobile/short-window layout. Mock UI sign-in sends no mail; actual production email activation remains unverified and disabled.
 
 The browser inventory is in `FLOWS.md`. Browser checks cover all main flows at 1440px and 375px, empty/conflicting filters, save/apply/delete searches, anonymous export, introduction withdrawal, scope precedence, current-employer exclusion, pause/resume, form validation, a real synthetic pilot signup, and a desktop/mobile/desktop resize cycle.
 
