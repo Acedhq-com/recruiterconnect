@@ -90,7 +90,7 @@ export default function ResearchPage() {
     <section className="career-heading"><div><p className="career-kicker">PRIVATE JOB RESEARCH</p>
       <h1>Look beyond the configured boards.</h1>
       <p>Search LinkedIn through ReefAPI. Verify employer details and resume fit before relying on a result.</p></div>
-      <Link className="button secondary" href="/" data-testid="research-employer-feed">Public employer feed</Link>
+      <Link className="button secondary" href="/jobs" data-testid="research-employer-feed">Public employer feed</Link>
     </section>
     <section className="career-research-status" aria-label="Research access" data-testid="research-status">
       <LockKeyhole size={17} /><p>{status}</p>
