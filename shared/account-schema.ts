@@ -24,6 +24,11 @@ export const savePrivateProfileSchema = z.object({
   workPreference: z.enum(["Remote", "Hybrid", "On-site"]),
   expectedVersion: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
 }).strict();
+const companyName = z.string().trim().min(2).max(150).regex(/^[^\u0000-\u001f\u007f]+$/);
+export const saveEmployerSchema = z.object({ employer: companyName }).strict();
+export const addBlockSchema = z.object({ company: companyName }).strict();
+export const removeBlockSchema = z.object({ id: z.uuid() }).strict();
+export const MAX_BLOCKS = 50;
 export const deletionRequestSchema = z.object({ confirmation: z.literal("DELETE") }).strict();
 export const emptyAccountActionSchema = z.object({}).strict();
 export type AccountKind = z.infer<typeof onboardAccountSchema>["kind"];
@@ -44,10 +49,13 @@ export type PrivateProfile = {
   discovery_active: false;
   version: number;
 };
+export type PrivateBlock = { id: string; company_name: string; source: "current_employer" | "candidate" };
+export type CandidatePrivacy = { current_employer: string | null; blocks: PrivateBlock[] };
 export type PublicAccountSession = {
   user: { id: string; email: string } | null;
   account: PrivateAccount | null;
   profile: PrivateProfile | null;
+  privacy: CandidatePrivacy | null;
   authEnabled: boolean;
   appOrigin: string;
   method: "email-code";

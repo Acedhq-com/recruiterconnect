@@ -1,14 +1,20 @@
 import { AuthClient } from "@supabase/auth-js";
 import { PostgrestClient } from "@supabase/postgrest-js";
 import type { User, Session } from "@supabase/auth-js";
-import type { OnboardAccount, PrivateAccount, PrivateProfile, SavePrivateProfile } from "../shared/account-schema.js";
+import { z } from "zod";
+import { MAX_BLOCKS } from "../shared/account-schema.js";
+import type { CandidatePrivacy, OnboardAccount, PrivateAccount, PrivateProfile, SavePrivateProfile } from "../shared/account-schema.js";
 
 export class AccountError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 export type AccountTokens = { accessToken: string; refreshToken: string; expiresIn: number };
 export type VerifiedSession = { user: { id: string; email: string }; tokens: AccountTokens };
-export type AccountRecords = { account: PrivateAccount | null; profile: PrivateProfile | null };
+export type AccountRecords = { account: PrivateAccount | null; profile: PrivateProfile | null; privacy: CandidatePrivacy | null };
+const blockRows = z.array(z.object({
+  id: z.uuid(), company_name: z.string().min(2).max(150), source: z.enum(["current_employer", "candidate"]),
+}).strict()).max(MAX_BLOCKS);
+const employerRow = z.object({ current_employer: z.string().min(2).max(150) }).strict().nullable();
 export interface IAccountService {
   enabled(): boolean;
   start(email: string, captchaToken?: string): Promise<void>;
@@ -18,6 +24,9 @@ export interface IAccountService {
   records(session: VerifiedSession): Promise<AccountRecords>;
   onboard(session: VerifiedSession, input: OnboardAccount): Promise<void>;
   saveProfile(session: VerifiedSession, input: SavePrivateProfile): Promise<void>;
+  saveEmployer(session: VerifiedSession, employer: string): Promise<void>;
+  addBlock(session: VerifiedSession, company: string): Promise<void>;
+  removeBlock(session: VerifiedSession, id: string): Promise<void>;
   requestDeletion(session: VerifiedSession): Promise<void>;
   cancelDeletion(session: VerifiedSession): Promise<void>;
 }
@@ -124,13 +133,30 @@ export class SupabaseAccountService implements IAccountService {
       // The account-only release must never present a profile as discoverable.
       if (profile?.discovery_active) throw new AccountError(503, "Account state needs operator review.");
     }
-    return { account, profile };
+    let privacy: CandidatePrivacy | null = null;
+    if (account?.account_kind === "candidate") {
+      const employer = await database.from("candidate_private").select("current_employer")
+        .eq("user_id", session.user.id).abortSignal(AbortSignal.timeout(7000)).maybeSingle();
+      this.check(employer.error);
+      const blocks = await database.from("candidate_blocks").select("id,company_name,source")
+        .eq("user_id", session.user.id).order("company_name").abortSignal(AbortSignal.timeout(7000));
+      this.check(blocks.error);
+      // Fail closed: a malformed row must not be shown as a trustworthy block list.
+      const parsedEmployer = employerRow.safeParse(employer.data ?? null);
+      const parsedBlocks = blockRows.safeParse(blocks.data ?? []);
+      if (!parsedEmployer.success || !parsedBlocks.success) {
+        throw new AccountError(503, "Private account storage is temporarily unavailable.");
+      }
+      privacy = { current_employer: parsedEmployer.data?.current_employer ?? null, blocks: parsedBlocks.data };
+    }
+    return { account, profile, privacy };
   }
   private check(error: { code?: string } | null): void {
     if (!error) return;
     if (error.code === "42501") throw new AccountError(403, "This account cannot perform that action.");
     if (error.code === "40001") throw new AccountError(409, "Your profile changed in another tab. Reload and try again.");
     if (error.code === "22023") throw new AccountError(400, "Please check the account details and try again.");
+    if (error.code === "54000") throw new AccountError(409, `Your block list is full (${MAX_BLOCKS} companies). Remove one before adding another.`);
     throw new AccountError(503, "Private account storage is temporarily unavailable.");
   }
   private async rpc(session: VerifiedSession, name: string, input: Record<string, unknown>): Promise<void> {
@@ -146,6 +172,15 @@ export class SupabaseAccountService implements IAccountService {
       p_display_name: input.displayName, p_headline: input.headline, p_skills: input.skills,
       p_work_preference: input.workPreference, p_expected_version: input.expectedVersion,
     });
+  }
+  saveEmployer(session: VerifiedSession, employer: string): Promise<void> {
+    return this.rpc(session, "save_my_current_employer", { p_employer: employer });
+  }
+  addBlock(session: VerifiedSession, company: string): Promise<void> {
+    return this.rpc(session, "add_my_block", { p_company: company });
+  }
+  removeBlock(session: VerifiedSession, id: string): Promise<void> {
+    return this.rpc(session, "remove_my_block", { p_id: id });
   }
   requestDeletion(session: VerifiedSession): Promise<void> {
     return this.rpc(session, "request_my_account_deletion", {});

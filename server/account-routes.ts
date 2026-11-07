@@ -1,8 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { parse, serialize } from "cookie";
 import {
-  PUBLIC_APP_ORIGIN, deletionRequestSchema, emptyAccountActionSchema,
-  onboardAccountSchema, savePrivateProfileSchema, startEmailSchema, verifyEmailSchema,
+  PUBLIC_APP_ORIGIN, addBlockSchema, deletionRequestSchema, emptyAccountActionSchema,
+  onboardAccountSchema, removeBlockSchema, saveEmployerSchema, savePrivateProfileSchema,
+  startEmailSchema, verifyEmailSchema,
 } from "../shared/account-schema.js";
 import type { PublicAccountSession } from "../shared/account-schema.js";
 import { AccountError, accountService } from "./account-service.js";
@@ -69,7 +70,7 @@ export function registerAccountRoutes(app: Express, service: IAccountService = a
   const current = (request: Request, response: Response, required = true) =>
     resolveAccountSession(request, response, service, required);
   async function envelope(session: VerifiedSession | null): Promise<PublicAccountSession> {
-    const records = session ? await service.records(session) : { account: null, profile: null };
+    const records = session ? await service.records(session) : { account: null, profile: null, privacy: null };
     if (session && records.account && records.account.user_id !== session.user.id) {
       throw new AccountError(503, "Account ownership could not be verified.");
     }
@@ -148,6 +149,30 @@ export function registerAccountRoutes(app: Express, service: IAccountService = a
     if (!input.success) throw new AccountError(400, "Check your private profile fields and try again.");
     const session = (await current(request, response))!;
     await service.saveProfile(session, input.data);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/employer", route(async (request, response) => {
+    requireEnabled();
+    const input = saveEmployerSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Enter your current employer (2 to 150 characters).");
+    const session = (await current(request, response))!;
+    await service.saveEmployer(session, input.data.employer);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/blocks", route(async (request, response) => {
+    requireEnabled();
+    const input = addBlockSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Enter a company name (2 to 150 characters).");
+    const session = (await current(request, response))!;
+    await service.addBlock(session, input.data.company);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/blocks/remove", route(async (request, response) => {
+    requireEnabled();
+    const input = removeBlockSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Choose a company to remove.");
+    const session = (await current(request, response))!;
+    await service.removeBlock(session, input.data.id);
     response.json(await envelope(session));
   }, true));
   app.post("/api/account/deletion-request", route(async (request, response) => {

@@ -70,6 +70,17 @@ runs the existing SQL assertions and lifecycle/validation regressions, and verif
 fixture cleanup. This is synthetic-auth SQL evidence, not SMTP, signed-JWT or
 hosted-provider validation; see `audit/README.md` before any hosted migration.
 
+### Candidate privacy controls (phase 1 of recruiter connection)
+
+Candidates can record a private current employer and a block list on the account page. This stores protections only. It does not make anyone discoverable and no recruiter-facing function exists yet.
+
+- Tables: `candidate_private` (current employer) and `candidate_blocks` (up to 50 companies; the current employer is always one of them). Both have owner-only read policies and no direct client writes. Writes go through `save_my_current_employer`, `add_my_block` and `remove_my_block`, which require an active verified candidate session and take the same row locks as the other private writers.
+- Matching key: `fwp_private.normalize_company` lowercases, removes punctuation, a leading "the" and trailing legal suffixes (Inc, LLC, LLP, Ltd, Corp, Co and similar). It errs toward blocking more. It does not detect affiliates, parents or renamed companies; those must be listed by the candidate or added as aliases in a later phase.
+- Changing the current employer keeps the previous one blocked as an ordinary entry. The current employer cannot be removed while it is current.
+- `fwp_private.privacy_audit` records event types only (employer set, block added, block removed), never company names, and has no grants to any app role.
+- Deliberately not included: a discoverability opt-in. Consent to be visible should be given when recruiter search exists, not recorded in advance. The page tells candidates they will be asked again.
+- Limits to state in product copy: this controls what this site shows; it cannot stop a recruiter finding someone elsewhere; matching is by name.
+
 `AUTH_EMAIL_READY` must stay unset or `0` until the sending subdomain is verified, Supabase SMTP and numeric-code templates are configured, and an authorized real sign-in email is tested. Never disable email confirmation to make the UI appear finished. Account cookies remain first-party, Secure/HttpOnly in production; tokens are not returned in JSON or browser storage.
 
 The owner-only SQL assertions in `supabase/tests/career_workspace.sql` run as authenticated/anonymous database roles with synthetic sessions inside a rollback-only transaction. They cover overlapping IDs across users, revocation, role boundaries, versions, literal text, deletion status, and anonymous denial. They do not prove SMTP delivery or a real browser Auth-provider round trip.

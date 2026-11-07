@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { registerAccountRoutes } from "../server/account-routes.js";
 import { AccountError } from "../server/account-service.js";
 import type { IAccountService, VerifiedSession } from "../server/account-service.js";
-import type { PrivateAccount, PrivateProfile } from "../shared/account-schema.js";
+import type { CandidatePrivacy, PrivateAccount, PrivateProfile } from "../shared/account-schema.js";
 
 afterEach(() => vi.unstubAllEnvs());
 const userId = "f4706aa9-4e3b-46a6-843f-0f7478a21c0e";
@@ -16,6 +16,8 @@ const account: PrivateAccount = { user_id: userId, account_kind: "candidate",
   display_name: "Synthetic Account", status: "active", deletion_requested_at: null };
 const profile: PrivateProfile = { headline: "Private draft", skills: ["Analysis"], work_preference: "Remote",
   discovery_active: false, version: 1 };
+const privacy: CandidatePrivacy = { current_employer: "Synthetic Employer", blocks: [
+  { id: "0b2f1c52-93d5-4f6a-9d0e-3a3c6f1a7d11", company_name: "Synthetic Employer", source: "current_employer" }] };
 const onboarding = { kind: "candidate", displayName: "Synthetic Account", acknowledgePrivateBeta: true };
 const save = { displayName: "Synthetic Account", headline: "Private draft", skills: ["Analysis"],
   workPreference: "Remote", expectedVersion: 1 };
@@ -24,8 +26,9 @@ function setup(overrides: Partial<IAccountService> = {}) {
     enabled: () => true, start: vi.fn(async () => {}),
     verify: vi.fn(async () => session), resolve: vi.fn(async () => session),
     logout: vi.fn(async () => true),
-    records: vi.fn(async () => ({ account, profile })),
+    records: vi.fn(async () => ({ account, profile, privacy })),
     onboard: vi.fn(async () => {}), saveProfile: vi.fn(async () => {}),
+    saveEmployer: vi.fn(async () => {}), addBlock: vi.fn(async () => {}), removeBlock: vi.fn(async () => {}),
     requestDeletion: vi.fn(async () => {}), cancelDeletion: vi.fn(async () => {}),
     ...overrides,
   };
@@ -41,7 +44,7 @@ function write(app: express.Express, path: string, body: Record<string, unknown>
 test("unconfigured auth reports disabled without contacting a provider", async () => {
   const { app, service } = setup({ enabled: () => false });
   const result = await request(app).get("/api/auth/session");
-  expect(result.body).toEqual({ user: null, account: null, profile: null,
+  expect(result.body).toEqual({ user: null, account: null, profile: null, privacy: null,
     authEnabled: false, appOrigin: "https://findworkprivately.com", method: "email-code" });
   expect(service.resolve).not.toHaveBeenCalled();
   expect(result.headers["cache-control"]).toContain("private, no-store");
@@ -151,7 +154,7 @@ test.each([{ user_id: "another-user" }, { discovery_active: true }, { account_ki
     expect(service.saveProfile).not.toHaveBeenCalled();
   });
 test("cross-account records fail closed before serialization", async () => {
-  const { app } = setup({ records: async () => ({ account: { ...account, user_id: "wrong-owner" }, profile }) });
+  const { app } = setup({ records: async () => ({ account: { ...account, user_id: "wrong-owner" }, profile, privacy }) });
   const result = await request(app).get("/api/auth/session");
   expect(result.status).toBe(503);
   expect(JSON.stringify(result.body)).not.toContain("wrong-owner");
@@ -192,4 +195,58 @@ test("cancellation cannot target another user's deletion request", async () => {
   expect(service.cancelDeletion).not.toHaveBeenCalled();
   expect((await write(app, "/api/account/cancel-deletion", {})).status).toBe(200);
   expect(service.cancelDeletion).toHaveBeenCalledWith(session);
+});
+
+test("saving the current employer reaches the service and returns the privacy record", async () => {
+  const { app, service } = setup();
+  const result = await write(app, "/api/account/employer", { employer: "  Synthetic Employer  " });
+  expect(result.status).toBe(200);
+  expect(service.saveEmployer).toHaveBeenCalledWith(session, "Synthetic Employer");
+  expect(result.body.privacy).toEqual(privacy);
+});
+test("adding and removing a block reach the service with validated input", async () => {
+  const { app, service } = setup();
+  expect((await write(app, "/api/account/blocks", { company: "Other Firm" })).status).toBe(200);
+  expect(service.addBlock).toHaveBeenCalledWith(session, "Other Firm");
+  const id = "0b2f1c52-93d5-4f6a-9d0e-3a3c6f1a7d11";
+  expect((await write(app, "/api/account/blocks/remove", { id })).status).toBe(200);
+  expect(service.removeBlock).toHaveBeenCalledWith(session, id);
+});
+test.each([
+  ["/api/account/employer", { employer: "" }], ["/api/account/employer", { employer: "x" }],
+  ["/api/account/employer", { employer: "a".repeat(151) }], ["/api/account/employer", { employer: "bad\nname" }],
+  ["/api/account/employer", { employer: "Firm", user_id: userId }], ["/api/account/employer", {}],
+  ["/api/account/blocks", { company: "" }], ["/api/account/blocks", { company: "Firm", source: "current_employer" }],
+  ["/api/account/blocks", { company: 5 }], ["/api/account/blocks/remove", { id: "not-a-uuid" }],
+  ["/api/account/blocks/remove", { id: "0b2f1c52-93d5-4f6a-9d0e-3a3c6f1a7d11", extra: true }],
+])("%s rejects %j without reaching the service", async (path, body) => {
+  const { app, service } = setup();
+  expect((await write(app, path, body)).status).toBe(400);
+  expect(service.saveEmployer).not.toHaveBeenCalled();
+  expect(service.addBlock).not.toHaveBeenCalled();
+  expect(service.removeBlock).not.toHaveBeenCalled();
+});
+test.each(["/api/account/employer", "/api/account/blocks", "/api/account/blocks/remove"])(
+  "%s requires a verified session, an enabled service and a same-origin request", async path => {
+    const body = path.endsWith("/employer") ? { employer: "Firm" }
+      : path.endsWith("/remove") ? { id: "0b2f1c52-93d5-4f6a-9d0e-3a3c6f1a7d11" } : { company: "Firm" };
+    const unsigned = setup({ resolve: async () => null });
+    expect((await write(unsigned.app, path, body)).status).toBe(401);
+    const disabled = setup({ enabled: () => false });
+    expect((await write(disabled.app, path, body)).status).toBe(503);
+    const foreign = setup();
+    const cross = await request(foreign.app).post(path).set("host", "findworkprivately.com")
+      .set("origin", "https://evil.example").send(body);
+    expect(cross.status).toBe(403);
+    for (const { service } of [unsigned, disabled, foreign]) {
+      expect(service.saveEmployer).not.toHaveBeenCalled();
+      expect(service.addBlock).not.toHaveBeenCalled();
+      expect(service.removeBlock).not.toHaveBeenCalled();
+    }
+  });
+test("a full block list surfaces as a clear conflict without leaking details", async () => {
+  const { app } = setup({ addBlock: async () => { throw new AccountError(409, "Your block list is full (50 companies). Remove one before adding another."); } });
+  const result = await write(app, "/api/account/blocks", { company: "Firm" });
+  expect(result.status).toBe(409);
+  expect(result.body.message).toContain("50");
 });

@@ -10,6 +10,7 @@ import {
 } from "../../shared/account-schema.js";
 import type { OnboardAccount, PrivateAccount, PrivateProfile, PublicAccountSession } from "../../shared/account-schema.js";
 import { apiRequest, queryClient } from "./lib/queryClient.js";
+import CandidatePrivacyPanel from "./CandidatePrivacy.js";
 
 const sessionKey = ["/api/auth/session"];
 const loadSession = async (): Promise<PublicAccountSession> => (await apiRequest("GET", sessionKey[0]!)).json();
@@ -135,7 +136,11 @@ function PrivateWorkspace({ data, onSaved }: { data: PublicAccountSession; onSav
   if (account.status !== "active") return <div className="settings-panel account-card"><LockKeyhole size={26} /><h2>{account.status === "deletion_requested" ? "Your deletion request is recorded." : "This account is paused."}</h2><p>{account.status === "deletion_requested" ? "This is a private request for operator review, not a claim that your records have already been deleted. Editing and discovery are blocked." : "Account changes are unavailable while the operator reviews this account."}</p></div>;
   if (account.account_kind === "recruiter") return <div className="settings-panel account-card"><ShieldCheck size={27} /><h2>A recruiter account, not verified access.</h2><p>Your email is confirmed and your account is private. Company membership, recruiter verification, production discovery, and billing are separate launch steps.</p><div className="setup-notice"><LockKeyhole size={20} /><p>No real candidate directory, identity, employer information, or paid entitlement is unlocked by choosing this account type.</p></div></div>;
   if (!data.profile) return <div className="settings-panel account-card"><h2>Your private draft is unavailable.</h2><p>No profile data is being guessed or substituted with a sample. Please reload the account page.</p></div>;
-  return <PrivateProfileForm key={account.user_id} account={account} profile={data.profile} onSaved={onSaved} />;
+  return <div className="privacy-stack">
+    <PrivateProfileForm key={account.user_id} account={account} profile={data.profile} onSaved={onSaved} />
+    {data.privacy && <CandidatePrivacyPanel key={`privacy-${account.user_id}`} account={account} profile={data.profile}
+      privacy={data.privacy} onSaved={onSaved} />}
+  </div>;
 }
 
 function PrivateProfileForm({ account, profile, onSaved }: { account: PrivateAccount; profile: PrivateProfile; onSaved: (value: PublicAccountSession) => void }) {

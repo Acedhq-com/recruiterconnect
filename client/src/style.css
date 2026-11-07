@@ -408,6 +408,27 @@
   .account-delete p { font-size: var(--text-xs); color: var(--color-muted); margin-top: var(--space-2); }
   .account-delete .field-label { font-size: var(--text-xs); }
   .account-safety .full-width { white-space: normal; }
+  .privacy-stack { display: grid; gap: var(--space-6); }
+  .privacy-panel h3 { font-size: var(--text-base); margin: 0; }
+  .privacy-note { display: flex; gap: var(--space-3); align-items: flex-start; margin: var(--space-4) 0 var(--space-2); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: color-mix(in srgb, currentColor 7%, transparent); }
+  .privacy-note > svg { flex-shrink: 0; margin-top: 2px; color: var(--color-green); }
+  .privacy-note p { font-size: var(--text-sm); color: var(--color-muted); margin: 0; }
+  .privacy-row { display: flex; gap: var(--space-3); align-items: stretch; }
+  .privacy-row input { flex: 1; min-width: 0; }
+  .privacy-row .button { flex-shrink: 0; white-space: nowrap; }
+  .privacy-blocks { margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+  .privacy-blocks-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
+  .privacy-count { font-size: var(--text-xs); color: var(--color-muted); }
+  .privacy-list { list-style: none; margin: var(--space-3) 0 var(--space-2); padding: 0; display: grid; gap: var(--space-2); }
+  .privacy-list li { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+  .privacy-list li > svg { flex-shrink: 0; color: var(--color-muted); }
+  .privacy-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--text-sm); }
+  .privacy-preview { margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+  .privacy-card { display: grid; gap: var(--space-2); margin: var(--space-3) 0; padding: var(--space-4); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); }
+  .privacy-card > span { font-size: var(--text-xs); color: var(--color-muted); }
+  .privacy-card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .privacy-card li { font-size: var(--text-xs); padding: 2px var(--space-2); border: 1px solid var(--color-border); border-radius: 999px; }
+  .privacy-limits { margin-top: var(--space-5); }
 }
 @layer responsive {
   @media (max-width: 1050px) {
@@ -419,6 +440,8 @@
     .account-link { width: 44px; min-width: 44px; padding-inline: var(--space-2); }
     .account-link > span { display: none; }
     .account-card { padding: var(--space-5); }
+    .privacy-row { flex-direction: column; }
+    .privacy-row .button { width: 100%; }
     .breadcrumb > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
 }

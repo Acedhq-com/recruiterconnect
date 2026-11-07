@@ -116,6 +116,10 @@ def mutate_in_transaction(conn, operation):
         )
     elif operation == "onboard":
         conn.execute("select public.onboard_my_account('candidate','Synthetic owner',true)")
+    elif operation == "employer":
+        conn.execute("select public.save_my_current_employer('Synthetic Employer LLP')")
+    elif operation == "block":
+        conn.execute("select public.add_my_block('Synthetic Blocked Firm')")
     else:
         raise AssertionError("Unknown test operation")
 
@@ -215,7 +219,8 @@ def test_rc01_waiting_write_rechecks_authority_after_lock(actor, authority, oper
 
 @pytest.mark.parametrize("authority", ["deletion", "suspension", "session_revocation"])
 @pytest.mark.parametrize(
-    "operation", ["background", "workflow", "document", "remove_document", "profile", "onboard"]
+    "operation",
+    ["background", "workflow", "document", "remove_document", "profile", "onboard", "employer", "block"],
 )
 def test_rc01_already_authorized_write_serializes_authority_change(actor, authority, operation):
     if operation == "remove_document":
@@ -444,6 +449,8 @@ def test_rc03_shared_api_storage_admission_contract(actor, kind, case):
     [
         "fwp_private.verified_user_id()",
         "fwp_private.career_actor()",
+        "fwp_private.privacy_actor()",
+        "fwp_private.normalize_company(text)",
         "fwp_private.career_trim(text)",
         "fwp_private.career_text(text,integer,boolean)",
         "fwp_private.career_public_posting_url(text)",
@@ -461,3 +468,254 @@ def test_private_validation_and_authority_helpers_are_not_directly_callable(sign
                 ).fetchone()[0]
                 is False
             )
+
+
+# --- Phase 1: candidate privacy controls (current employer and block list) ---
+
+
+def make_actor(kind="candidate"):
+    user_id, session_id = str(uuid.uuid4()), str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            """insert into auth.users
+               (id, email, email_confirmed_at, is_anonymous, created_at, updated_at)
+               values (%s, %s, now(), false, now(), now())""",
+            (user_id, f"{user_id}@example.com"),
+        )
+        conn.execute(
+            """insert into auth.sessions(id, user_id, created_at, updated_at)
+               values (%s, %s, now(), now())""",
+            (session_id, user_id),
+        )
+        with actor_transaction(conn, (user_id, session_id)):
+            conn.execute("select public.onboard_my_account(%s, 'Synthetic person', true)", (kind,))
+    return user_id, session_id
+
+
+@pytest.fixture
+def other_actor():
+    person = make_actor()
+    yield person
+    with connect() as conn:
+        conn.execute("delete from auth.users where id = %s", (person[0],))
+
+
+@pytest.fixture
+def recruiter_actor():
+    person = make_actor("recruiter")
+    yield person
+    with connect() as conn:
+        conn.execute("delete from auth.users where id = %s", (person[0],))
+
+
+def run_as(person, sql, params=()):
+    with connect() as conn, actor_transaction(conn, person):
+        return conn.execute(sql, params).fetchall()
+
+
+def my_blocks(person):
+    return run_as(
+        person,
+        "select company_name, source from public.candidate_blocks order by company_name",
+    )
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Acme, Inc.", "acme"),
+        ("ACME LLC", "acme"),
+        ("The Acme Company", "acme"),
+        ("Smith & Jones LLP", "smith and jones"),
+        ("  Big   Four  Co.  ", "big four"),
+        ("KPMG LLP", "kpmg"),
+        ("Ernst & Young LLP", "ernst and young"),
+        ("A.B.C. Corp", "a b c"),
+        ("Acme\u00a0Inc", "acme"),
+        ("Acme Inc Co", "acme"),
+        ("3M Company", "3m"),
+        ("Co", "co"),
+        ("!!", ""),
+    ],
+)
+def test_phase1_company_names_normalize_to_one_key(raw, expected):
+    with connect() as conn:
+        assert (
+            conn.execute("select fwp_private.normalize_company(%s)", (raw,)).fetchone()[0]
+            == expected
+        )
+
+
+def test_phase1_current_employer_is_stored_privately_and_blocked(actor):
+    run_as(actor, "select public.save_my_current_employer(%s)", ("Acme Holdings, Inc.",))
+    assert my_blocks(actor) == [("Acme Holdings, Inc.", "current_employer")]
+    assert run_as(actor, "select current_employer from public.candidate_private") == [
+        ("Acme Holdings, Inc.",)
+    ]
+
+
+def test_phase1_changing_employer_keeps_the_previous_one_blocked(actor):
+    run_as(actor, "select public.save_my_current_employer('Old Firm LLP')")
+    run_as(actor, "select public.save_my_current_employer('New Firm LLP')")
+    assert my_blocks(actor) == [
+        ("New Firm LLP", "current_employer"),
+        ("Old Firm LLP", "candidate"),
+    ]
+
+
+def test_phase1_employer_matching_an_existing_block_converts_it(actor):
+    run_as(actor, "select public.add_my_block('Acme Inc')")
+    run_as(actor, "select public.save_my_current_employer('ACME LLC')")
+    assert my_blocks(actor) == [("ACME LLC", "current_employer")]
+
+
+def test_phase1_blocks_dedupe_by_normalized_name_and_are_capped(actor):
+    run_as(actor, "select public.save_my_current_employer('Employer 0 LLC')")
+    for n in range(1, 50):
+        run_as(actor, "select public.add_my_block(%s)", (f"Company {n} Inc",))
+    assert len(my_blocks(actor)) == 50
+    # Re-adding an existing company is a no-op even at the cap.
+    run_as(actor, "select public.add_my_block('company 7, LLC')")
+    assert len(my_blocks(actor)) == 50
+    with pytest.raises(psycopg.errors.ProgramLimitExceeded):
+        run_as(actor, "select public.add_my_block('One Too Many Ltd')")
+    with pytest.raises(psycopg.errors.ProgramLimitExceeded):
+        run_as(actor, "select public.save_my_current_employer('Brand New Employer LLC')")
+    assert len(my_blocks(actor)) == 50
+
+
+def test_phase1_current_employer_cannot_be_removed_but_others_can(actor):
+    run_as(actor, "select public.save_my_current_employer('Current Firm LLP')")
+    run_as(actor, "select public.add_my_block('Other Firm')")
+    ids = dict(run_as(actor, "select company_name, id from public.candidate_blocks"))
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(actor, "select public.remove_my_block(%s)", (ids["Current Firm LLP"],))
+    run_as(actor, "select public.remove_my_block(%s)", (ids["Other Firm"],))
+    assert my_blocks(actor) == [("Current Firm LLP", "current_employer")]
+
+
+def test_phase1_owner_only_reads_and_no_cross_user_removal(actor, other_actor):
+    run_as(actor, "select public.add_my_block('Private Firm')")
+    mine = run_as(actor, "select id from public.candidate_blocks")
+    assert run_as(other_actor, "select count(*) from public.candidate_blocks") == [(0,)]
+    assert run_as(other_actor, "select count(*) from public.candidate_private") == [(0,)]
+    # Removing someone else's block id is a silent no-op that leaves it intact.
+    run_as(other_actor, "select public.remove_my_block(%s)", (mine[0][0],))
+    assert my_blocks(actor) == [("Private Firm", "candidate")]
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "insert into public.candidate_blocks(user_id,company_name,company_key,source) "
+        "select user_id,'X Firm','x firm','candidate' from public.member_accounts limit 1",
+        "update public.candidate_blocks set company_name = 'Changed'",
+        "delete from public.candidate_blocks",
+        "insert into public.candidate_private(user_id,current_employer,current_employer_key) "
+        "select user_id,'X Firm','x firm' from public.member_accounts limit 1",
+        "update public.candidate_private set current_employer = 'Changed'",
+        "delete from public.candidate_private",
+    ],
+)
+def test_phase1_clients_cannot_write_the_tables_directly(actor, statement):
+    run_as(actor, "select public.save_my_current_employer('Direct Write Firm LLC')")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        run_as(actor, statement)
+
+
+def test_phase1_anon_has_no_access():
+    with connect() as conn:
+        for statement in (
+            "select * from public.candidate_blocks",
+            "select * from public.candidate_private",
+            "select public.add_my_block('Anon Firm')",
+            "select public.save_my_current_employer('Anon Firm')",
+        ):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                with conn.transaction():
+                    conn.execute("set local role anon")
+                    conn.execute(statement)
+
+
+def test_phase1_recruiter_accounts_cannot_use_candidate_controls(recruiter_actor):
+    for statement in (
+        "select public.save_my_current_employer('Recruiter Firm')",
+        "select public.add_my_block('Recruiter Firm')",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(recruiter_actor, statement)
+    assert run_as(recruiter_actor, "select count(*) from public.candidate_blocks") == [(0,)]
+
+
+@pytest.mark.parametrize(
+    "value", ["", " ", "x", "a" * 151, "bad\nname", "!!", ". . ."],
+)
+@pytest.mark.parametrize("function", ["save_my_current_employer", "add_my_block"])
+def test_phase1_invalid_company_names_are_rejected(actor, function, value):
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(actor, f"select public.{function}(%s)", (value,))
+    assert my_blocks(actor) == []
+
+
+def test_phase1_null_inputs_are_rejected(actor):
+    for statement in (
+        "select public.save_my_current_employer(null)",
+        "select public.add_my_block(null)",
+        "select public.remove_my_block(null)",
+    ):
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            run_as(actor, statement)
+
+
+def test_phase1_audit_records_events_without_company_names(actor):
+    run_as(actor, "select public.save_my_current_employer('Secret Audit Firm LLP')")
+    run_as(actor, "select public.add_my_block('Another Secret Firm')")
+    ids = run_as(actor, "select id from public.candidate_blocks where source = 'candidate'")
+    run_as(actor, "select public.remove_my_block(%s)", (ids[0][0],))
+    with connect() as conn:
+        columns = [
+            row[0]
+            for row in conn.execute(
+                """select column_name from information_schema.columns
+                   where table_schema = 'fwp_private' and table_name = 'privacy_audit'
+                   order by ordinal_position"""
+            ).fetchall()
+        ]
+        assert columns == ["id", "user_id", "event", "created_at"]
+        events = conn.execute(
+            "select event from fwp_private.privacy_audit where user_id = %s order by id",
+            (actor[0],),
+        ).fetchall()
+        assert [e[0] for e in events] == ["current_employer_set", "block_added", "block_removed"]
+        for role in ("anon", "authenticated"):
+            assert (
+                conn.execute(
+                    "select has_table_privilege(%s,'fwp_private.privacy_audit','SELECT,INSERT,UPDATE,DELETE')",
+                    (role,),
+                ).fetchone()[0]
+                is False
+            )
+
+
+def test_phase1_deleting_the_account_removes_private_rows():
+    person = make_actor()
+    run_as(person, "select public.save_my_current_employer('Gone Firm LLC')")
+    run_as(person, "select public.add_my_block('Gone Block')")
+    with connect() as conn:
+        conn.execute("delete from auth.users where id = %s", (person[0],))
+        assert conn.execute(
+            "select (select count(*) from public.candidate_blocks where user_id = %s), "
+            "(select count(*) from public.candidate_private where user_id = %s)",
+            (person[0], person[0]),
+        ).fetchone() == (0, 0)
+
+
+def test_phase1_deletion_requested_accounts_cannot_change_protections(actor):
+    run_as(actor, "select public.save_my_current_employer('Frozen Firm LLC')")
+    run_as(actor, "select public.request_my_account_deletion()")
+    for statement in (
+        "select public.add_my_block('Late Block')",
+        "select public.save_my_current_employer('Late Employer')",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(actor, statement)
