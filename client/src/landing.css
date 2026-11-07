@@ -1,4 +1,4 @@
-.landing {
+.landing, .landing-dialog {
   --l-bg: #11161c;
   --l-surface: #19212a;
   --l-soft: #222d38;
@@ -9,6 +9,8 @@
   --l-green-ink: #122a20;
   --l-border: #ffffff21;
   --l-font: "Calibri", "Carlito", "Segoe UI", sans-serif;
+}
+.landing {
   min-height: 100dvh;
   background: var(--l-bg);
   color: var(--l-ink);
@@ -22,11 +24,11 @@
 .landing h2 { font-size: clamp(1.45rem, 1.2rem + 1.1vw, 2.1rem); font-weight: 700; margin-bottom: 1rem; }
 .landing h3 { font-size: 1.1rem; font-weight: 700; }
 .landing p { color: var(--l-muted); }
-.landing .button { font-family: var(--l-font); font-size: 1rem; white-space: normal; text-align: center; border-radius: 8px; min-height: 48px; padding-inline: 1.25rem; }
-.landing .button.primary { background: var(--l-green); color: var(--l-green-ink); }
-.landing .button.primary:hover:not(:disabled) { background: var(--l-green-hover); }
-.landing .button.secondary { background: var(--l-surface); color: var(--l-ink); border-color: var(--l-border); }
-.landing .button.secondary:hover { background: var(--l-soft); }
+.landing .button, .landing-dialog .button { font-family: var(--l-font); font-size: 1rem; white-space: normal; text-align: center; border-radius: 8px; min-height: 48px; padding-inline: 1.25rem; }
+.landing .button.primary, .landing-dialog .button.primary { background: var(--l-green); color: var(--l-green-ink); }
+.landing .button.primary:hover:not(:disabled), .landing-dialog .button.primary:hover:not(:disabled) { background: var(--l-green-hover); }
+.landing .button.secondary, .landing-dialog .button.secondary { background: var(--l-surface); color: var(--l-ink); border-color: var(--l-border); }
+.landing .button.secondary:hover, .landing-dialog .button.secondary:hover { background: var(--l-soft); }
 .landing .button small { font-size: .78rem; font-weight: 400; opacity: .85; }
 .landing .button-stack { flex-direction: column; gap: .1rem; line-height: 1.2; padding-block: .5rem; }
 .landing .skip-link { background: var(--l-surface); color: var(--l-ink); }

@@ -307,6 +307,34 @@ def test_positive_pilot_consent_and_plan_are_enforced_for_direct_rpc():
                     )
 
 
+def test_positive_pilot_research_request_is_a_candidate_plan_kept_apart_from_signup():
+    with connect() as conn, conn.transaction(force_rollback=True):
+        assert conn.execute("select count(*) from public.pilot_leads").fetchone()[0] == 0
+        conn.execute("set local role anon")
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            with conn.transaction():
+                conn.execute(
+                    """select public.register_pilot_interest(
+                    'synthetic@example.com','Audit owner','Synthetic audit',
+                    'recruiter','research',true)"""
+                )
+        for plan in ("candidate", "research", "research"):
+            assert (
+                conn.execute(
+                    """select public.register_pilot_interest(
+                    'synthetic@example.com','Audit owner','Synthetic audit',
+                    'candidate',%s,true)""",
+                    (plan,),
+                ).fetchone()[0]
+                is True
+            )
+        conn.execute("reset role")
+        rows = conn.execute(
+            "select plan from public.pilot_leads where email = 'synthetic@example.com' order by plan"
+        ).fetchall()
+        assert [row[0] for row in rows] == ["candidate", "research"]
+
+
 def test_positive_pilot_duplicate_is_accepted_at_exact_hourly_cap():
     with connect() as conn, conn.transaction(force_rollback=True):
         assert conn.execute("select count(*) from public.pilot_leads").fetchone()[0] == 0

@@ -27,7 +27,7 @@ export function registerRoutes(app: Express, store: IStorage = storage): void {
       }
     }
     const parsed = insertPilotLeadSchema.safeParse(request.body);
-    if (!parsed.success || (parsed.success && (parsed.data.audience === "candidate") !== (parsed.data.plan === "candidate"))) {
+    if (!parsed.success || (parsed.data.audience === "candidate") !== ["candidate", "research"].includes(parsed.data.plan)) {
       response.status(400).json({ message: "Please provide a valid name, email, company or field, and consent for the selected pilot." });
       return;
     }

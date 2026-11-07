@@ -29,6 +29,12 @@ test("valid signup persists before success is reported", async () => {
   expect(result.body).toEqual({ accepted: true });
   expect(store.createPilotLead).toHaveBeenCalledOnce();
 });
+test("a candidate LinkedIn research access request is accepted", async () => {
+  const { api, store } = testApp();
+  const result = await request(api).post("/api/pilot").send({ ...valid, audience: "candidate", plan: "research" });
+  expect(result.status).toBe(201);
+  expect(store.createPilotLead).toHaveBeenCalledWith(expect.objectContaining({ audience: "candidate", plan: "research" }));
+});
 test("an unavailable store never produces a false success", async () => {
   const { api, store } = testApp(false);
   expect((await request(api).post("/api/pilot").send(valid)).status).toBe(503);
@@ -36,7 +42,8 @@ test("an unavailable store never produces a false success", async () => {
 });
 test.each([
   { consent: false }, { email: "bad" }, { plan: "candidate" }, { role: "admin" },
-  { website: "spam" }, { audience: "candidate", plan: "founding" },
+  { website: "spam" }, { audience: "candidate", plan: "founding" }, { plan: "research" },
+  { audience: "candidate", plan: "team" },
 ])("invalid intake %j does not reach storage", async patch => {
   const { api, store } = testApp();
   expect((await request(api).post("/api/pilot").send({ ...valid, ...patch })).status).toBe(400);

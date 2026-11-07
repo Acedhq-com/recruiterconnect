@@ -60,7 +60,7 @@ export const insertPilotLeadSchema = createInsertSchema(pilotLeads)
     name: z.string().trim().min(2).max(100),
     organization: z.string().trim().min(2).max(150),
     audience: z.enum(["recruiter", "candidate"]),
-    plan: z.enum(["candidate", "founding", "team"]),
+    plan: z.enum(["candidate", "founding", "team", "research"]),
     consent: z.literal(true, { error: "Please agree to be contacted about the pilot." }),
     website: z.string().max(0).optional(),
   }).strict();
