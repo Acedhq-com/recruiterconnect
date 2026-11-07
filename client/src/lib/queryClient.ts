@@ -5,13 +5,14 @@ const proxy = "__PORT_5000__";
 const API_BASE = proxy.startsWith("__") ? "" : proxy;
 
 export async function apiRequest(method: string, url: string, data?: unknown,
-  headers: Record<string, string> = {}): Promise<Response> {
+  headers: Record<string, string> = {}, signal?: AbortSignal): Promise<Response> {
   const response = await fetch(`${API_BASE}${url}`, {
     method,
     headers: { ...(data === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
     ...(data === undefined ? {} : {
       body: JSON.stringify(data),
     }),
+    ...(signal ? { signal } : {}),
   });
   if (!response.ok) {
     const body: { message?: string } = await response.json().catch(() => ({}));

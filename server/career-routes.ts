@@ -8,9 +8,13 @@ import type { ICareerStorage } from "./career-service.js";
 import { liveFeed } from "./vendor/jobtracker/live-feed.mjs";
 import { removeDocumentSchema, saveBackgroundSchema, saveDocumentSchema, saveWorkflowSchema } from "../shared/career-schema.js";
 import type { CareerFeed } from "../shared/career-schema.js";
+import { researchSearchSchema } from "../shared/research-schema.js";
+import { researchService } from "./research-service.js";
+import type { IResearchService } from "./research-service.js";
 
 export function registerCareerRoutes(app: Express, accounts: IAccountService = accountService,
-  storage: ICareerStorage = careerStorage, feed: { get(): Promise<CareerFeed> } = liveFeed): void {
+  storage: ICareerStorage = careerStorage, feed: { get(): Promise<CareerFeed> } = liveFeed,
+  research: IResearchService = researchService): void {
   app.get("/api/jobs", async (request, response) => {
     if (Object.keys(request.query).length) {
       response.status(400).set("Cache-Control", "no-store").json({ message: "Use the on-page filters. Custom feed URLs are not accepted." });
@@ -38,12 +42,13 @@ export function registerCareerRoutes(app: Express, accounts: IAccountService = a
     }
     return session;
   }
-  function route(handler: (request: Request, response: Response, session: VerifiedSession) => Promise<void>, write = false) {
+  function route(handler: (request: Request, response: Response, session: VerifiedSession, deadline: number) => Promise<void>, write = false) {
     return async (request: Request, response: Response) => {
+      const deadline = Date.now() + 27_000;
       privateAccountResponse(response);
       try {
         if (write) assertAccountWrite(request);
-        await handler(request, response, await owner(request, response));
+        await handler(request, response, await owner(request, response), deadline);
       } catch (error) {
         response.status(error instanceof AccountError ? error.status : 503).json({
           message: error instanceof AccountError ? error.message : "Private workspace access is temporarily unavailable.",
@@ -59,6 +64,16 @@ export function registerCareerRoutes(app: Express, accounts: IAccountService = a
   app.get("/api/career/workspace", route(async (_request, response, session) => {
     response.json(await storage.read(session));
   }));
+  app.get("/api/career/research/status", route(async (_request, response, session) => {
+    response.json({ enabled: research.allowed(session.user.id), source: "linkedin", provider: "reefapi" });
+  }));
+  app.post("/api/career/research/search", route(async (request, response, session, deadline) => {
+    const value = input(researchSearchSchema, request.body);
+    if (!research.allowed(session.user.id)) {
+      throw new AccountError(403, "Research is not enabled for this candidate account.");
+    }
+    response.json(await research.search(session.user.id, value, deadline - Date.now()));
+  }, true));
   app.post("/api/career/background", route(async (request, response, session) => {
     const value = input(saveBackgroundSchema, request.body);
     await storage.saveBackground(session, value.content, value.expectedVersion);

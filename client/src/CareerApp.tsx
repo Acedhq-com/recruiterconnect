@@ -24,6 +24,7 @@ import { apiRequest } from "./lib/queryClient.js";
 import { csvCell, downloadFile } from "./lib/export.js";
 import "./career.css";
 const AccountPage = lazy(() => import("./AccountPage.js"));
+const ResearchPage = lazy(() => import("./ResearchPage.js"));
 const LegacyRecruiterApp = lazy(() => import("./App.js"));
 
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString(undefined, {
@@ -32,11 +33,13 @@ const formatDate = (value: string | null) => value ? new Date(value).toLocaleStr
 const labels: Record<string, string> = {
   "/": "Find jobs", "/jobs": "Find jobs", "/pipeline": "My applications",
   "/studio": "Application studio", "/background": "My background",
+  "/research": "Private research",
   "/workspace-privacy": "Privacy", "/account": "Account",
 };
 const navigation = [
   { href: "/", key: "jobs", label: "Find jobs", icon: Search },
   { href: "/pipeline", key: "pipeline", label: "My applications", icon: BriefcaseBusiness },
+  { href: "/research", key: "research", label: "Private research", icon: Search },
   { href: "/studio", key: "studio", label: "Application studio", icon: FileText },
   { href: "/background", key: "background", label: "My background", icon: UserRound },
   { href: "/workspace-privacy", key: "privacy", label: "Privacy", icon: ShieldCheck },
@@ -403,6 +406,7 @@ function CareerRoutes() {
   let content: ReactNode;
   if (["/", "/jobs", "/pipeline"].includes(location)) content = <Jobs key={store.owner} />;
   else if (location === "/studio") content = <Studio key={store.owner} />;
+  else if (location === "/research") content = <Suspense fallback={<div role="status" className="career-loading">Opening private research…</div>}><ResearchPage key={store.owner} /></Suspense>;
   else if (location === "/background") content = <Background key={`${store.owner}-${store.workspace.background?.version ?? 0}`} />;
   else if (location === "/workspace-privacy") content = <Privacy />;
   else if (location === "/account") content = <Suspense fallback={<div role="status" className="career-loading">Opening account…</div>}><AccountPage /></Suspense>;
