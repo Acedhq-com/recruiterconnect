@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { Link } from "wouter";
-import { ExternalLink, LockKeyhole, Search } from "lucide-react";
+import { ExternalLink, KeyRound, LockKeyhole, Search } from "lucide-react";
 import { useCareer } from "./career-store.js";
 import { apiRequest } from "./lib/queryClient.js";
 import { researchSearchSchema } from "../../shared/research-schema.js";
 import type { ResearchResult } from "../../shared/research-schema.js";
+
+const PilotDialog = lazy(() => import("./PilotDialog.js"));
 
 type SearchFields = {
   keywords: string; location: string; maxResults: number; datePosted: string;
@@ -31,6 +33,7 @@ export default function ResearchPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<ResearchResult | null>(null);
+  const [requesting, setRequesting] = useState(false);
   const form = useForm<SearchFields>({
     defaultValues: { keywords: "", location: "", maxResults: 20, datePosted: "week",
       workplace: "", experience: "", employment: "", acknowledgeCredits: false },
@@ -80,11 +83,13 @@ export default function ResearchPage() {
       if (epoch.current === attempt) { pending.current = false; setBusy(false); }
     }
   });
-  const status = !store.canSave ? "A verified, active candidate account is required. Guest work and recruiter accounts cannot run paid research."
+  const status = !store.canSave ? "LinkedIn search is opened by hand for pilot members and needs a verified candidate account. You can request access now; the public employer feed stays available to everyone."
     : access.isPending ? "Checking private research access…"
     : access.isError ? "Research access could not be verified. No search was sent."
-    : !allowed ? "Research is not enabled for this account. The public employer feed remains available."
+    : !allowed ? "LinkedIn search is not enabled for this account yet. Request access and Story will enable it by hand. The public employer feed remains available."
     : "LinkedIn discovery is enabled for this account. Each search may use provider credits.";
+  // A disabled query stays "pending", so guests must not wait on it.
+  const canRequest = !allowed && (!store.canSave || !access.isPending);
 
   return <>
     <section className="career-heading"><div><p className="career-kicker">PRIVATE JOB RESEARCH</p>
@@ -96,7 +101,10 @@ export default function ResearchPage() {
       <LockKeyhole size={17} /><p>{status}</p>
       {!store.canSave && <Link className="text-button" href="/account" data-testid="research-account">Account setup</Link>}
       {access.isError && <button className="text-button" data-testid="research-retry-access" onClick={() => void access.refetch()}>Recheck access</button>}
+      {canRequest && <button type="button" className="button primary" data-testid="research-request-access" onClick={() => setRequesting(true)}>
+        <KeyRound size={15} />Request LinkedIn search access</button>}
     </section>
+    {requesting && <Suspense fallback={null}><PilotDialog plan="research" onClose={() => setRequesting(false)} /></Suspense>}
     <form className="career-research-form" onSubmit={submit} noValidate aria-busy={busy}>
       <fieldset disabled={!allowed || busy}><legend>Search criteria</legend>
         <div className="career-form-grid">

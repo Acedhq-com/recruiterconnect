@@ -6,8 +6,9 @@ import { ArrowRight, Check, LockKeyhole, X } from "lucide-react";
 import { insertPilotLeadSchema } from "../../shared/schema.js";
 import type { InsertPilotLead } from "../../shared/schema.js";
 import { apiRequest } from "./lib/queryClient.js";
+import "./landing.css";
 
-type Plan = "candidate" | "founding";
+export type Plan = "candidate" | "founding" | "research";
 
 const copy = {
   candidate: {
@@ -28,6 +29,15 @@ const copy = {
     successTitle: "Application received.",
     successBody: "Expect a personal email within a few days to verify your firm and walk through how introductions work. Your first two introductions in the pilot are free; pricing is shared during onboarding.",
   },
+  research: {
+    title: "Request LinkedIn search access.",
+    intro: "LinkedIn search runs through a paid data provider, so access is opened by hand for pilot members. Tell us where to reach you and what you're looking for. Use the same email as your Find Work Privately account if you have one.",
+    organizationLabel: "Target role and location",
+    organizationHint: "Example: Senior accountant, remote or Chicago. Don't name your current employer here.",
+    submit: "Request access",
+    successTitle: "Request received.",
+    successBody: "Story will email you personally within a few days. Once your account is enabled, Private research will show LinkedIn search as available the next time you open it.",
+  },
 } as const;
 
 export default function PilotDialog({ plan, onClose }: { plan: Plan; onClose: () => void }) {
@@ -45,7 +55,7 @@ export default function PilotDialog({ plan, onClose }: { plan: Plan; onClose: ()
   const status = useQuery<{ intakeReady: boolean }>({ queryKey: ["/api/status"], queryFn: async () => (await apiRequest("GET", "/api/status")).json() });
   const form = useForm<InsertPilotLead>({
     resolver: zodResolver(insertPilotLeadSchema) as never,
-    defaultValues: { name: "", email: "", organization: "", audience: plan === "candidate" ? "candidate" : "recruiter", plan, consent: false as unknown as true, website: "" },
+    defaultValues: { name: "", email: "", organization: "", audience: plan === "founding" ? "recruiter" : "candidate", plan, consent: false as unknown as true, website: "" },
   });
   const mutation = useMutation({
     mutationFn: async (values: InsertPilotLead) => (await apiRequest("POST", "/api/pilot", values)).json(),
@@ -80,7 +90,7 @@ export default function PilotDialog({ plan, onClose }: { plan: Plan; onClose: ()
       <button className="button primary" data-testid="button-submit-pilot" type="submit" disabled={mutation.isPending || status.isPending || !ready}>
         {mutation.isPending ? "Sending…" : status.isPending ? "Checking…" : !ready ? "Sign-up unavailable" : text.submit}{!mutation.isPending && ready && <ArrowRight size={15} />}
       </button>
-      <p className="landing-dialog-fine">No card, no billing, no public profile. {plan === "candidate" ? "Candidates never pay." : "No candidate data is shown before verification."}</p>
+      <p className="landing-dialog-fine">No card, no billing, no public profile. {plan === "founding" ? "No candidate data is shown before verification." : plan === "research" ? "Nothing from your workspace is sent to the provider." : "Candidates never pay."}</p>
     </form>}
   </dialog>;
 }
