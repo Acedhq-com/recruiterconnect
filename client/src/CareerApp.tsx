@@ -32,13 +32,13 @@ const formatDate = (value: string | null) => value ? new Date(value).toLocaleStr
   month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
 }) : "Not checked";
 const labels: Record<string, string> = {
-  "/jobs": "Find jobs", "/pipeline": "My applications",
+  "/": "Find jobs", "/jobs": "Find jobs", "/pipeline": "My applications",
   "/studio": "Application studio", "/background": "My background",
   "/research": "Private research",
   "/workspace-privacy": "Privacy", "/account": "Account",
 };
 const navigation = [
-  { href: "/jobs", key: "jobs", label: "Find jobs", icon: Search },
+  { href: "/", key: "jobs", label: "Find jobs", icon: Search },
   { href: "/pipeline", key: "pipeline", label: "My applications", icon: BriefcaseBusiness },
   { href: "/research", key: "research", label: "Private research", icon: Search },
   { href: "/studio", key: "studio", label: "Application studio", icon: FileText },
@@ -85,13 +85,13 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="career-workspace-label"><LockKeyhole size={15} /><span>Your career workspace<small>{store.canSave ? "Private account" : "Temporary tab"}</small></span></div>
       <nav aria-label="Career navigation">{navigation.map(item => <Link key={item.key} href={item.href}
         data-testid={`career-nav-${item.key}`} aria-current={location === item.href ? "page" : undefined}
-        className={location === item.href ? "active" : ""}>
+        className={location === item.href || (item.href === "/" && location === "/jobs") ? "active" : ""}>
         <item.icon size={17} />{item.label}{item.key === "pipeline" && store.workspace.jobs.length > 0 && <span className="career-count">{store.workspace.jobs.length}</span>}
       </Link>)}</nav>
       <div className="career-sidebar-bottom">
         <p><ShieldCheck size={16} /> Your search is yours.</p>
         <span>Your workspace is never shown to recruiters.</span>
-        <Link href="/" data-testid="career-recruiter-preview"><Users size={16} />Private recruiter pilot<small>How it works</small></Link>
+        <Link href="/private" data-testid="career-recruiter-preview"><Users size={16} />Private recruiter pilot<small>How it works</small></Link>
         <a href="https://www.perplexity.ai/" target="_blank" rel="noopener noreferrer" data-testid="career-attribution">Made with Perplexity <ExternalLink size={12} /></a>
       </div>
     </aside>
@@ -168,7 +168,7 @@ function Jobs() {
   return <>
     <section className="career-heading"><div><p className="career-kicker">{pipeline ? "YOUR NEXT STEPS" : "REAL EMPLOYER LISTINGS"}</p>
       <h1>{pipeline ? "Keep your search moving." : "Find a role worth your next step."}</h1>
-      <p>{pipeline ? "Jobs, notes, and follow-ups. Never visible to recruiters." : "Explore public employer postings. Keep your application work separate."}</p></div>
+      <p>{pipeline ? "Jobs, notes, and follow-ups. Never visible to recruiters." : "Public employer postings here, LinkedIn search under Private research. Everything you save stays in a tracker recruiters never see."}</p></div>
       {pipeline ? <button className="button secondary" data-testid="career-export-workflow" disabled={!store.workspace.jobs.length} onClick={exportWorkflow}><ArrowDownToLine size={15} />Export CSV</button>
         : <button className="button secondary" data-testid="career-refresh-jobs" disabled={feed.isFetching} onClick={() => void feed.refetch()}><RefreshCw size={15} className={feed.isFetching ? "career-spin" : ""} />Refresh jobs</button>}
     </section>
@@ -204,14 +204,14 @@ function Jobs() {
       <p>Unknown values do not qualify for numeric limits. Remote does not mean eligible everywhere. Interview steps are not a timing guarantee.</p>
     </section>}
     {pipeline ? <>
-      <div className="career-result-heading"><h2 data-testid="career-pipeline-count">{tracked.length} tracked applications</h2><Link href="/jobs" className="text-button">Find more jobs <ArrowRight size={13} /></Link></div>
+      <div className="career-result-heading"><h2 data-testid="career-pipeline-count">{tracked.length} tracked applications</h2><Link href="/" className="text-button">Find more jobs <ArrowRight size={13} /></Link></div>
       {tracked.length ? <div className="career-pipeline">{tracked.map(row => <article key={row.job.id} className="career-pipeline-row" data-testid={`career-tracked-${row.job.id}`}>
         <div><span className="career-stage">{row.stage}</span><button className="career-role-button" data-testid={`career-edit-${row.job.id}`} onClick={() => setSelected(row.job)}>{row.job.role}</button>
           <p>{row.job.company} · {row.job.location}</p></div>
         <div><span>Next action</span><p>{row.nextAction || "Choose your next step"}</p></div>
         <div><span>Follow-up</span><p>{row.followUpDate || "Not set"}</p></div>
         <button className="button secondary" data-testid={`career-workflow-${row.job.id}`} onClick={() => setSelected(row.job)}>Edit workflow <ChevronRight size={14} /></button>
-      </article>)}</div> : <Empty title="Your next opportunity goes here."><p>Save a real employer listing to start tracking it.</p><Link className="button primary" href="/jobs" data-testid="career-empty-find-jobs">Find jobs <ArrowRight size={14} /></Link></Empty>}
+      </article>)}</div> : <Empty title="Your next opportunity goes here."><p>Save a real employer listing to start tracking it.</p><Link className="button primary" href="/" data-testid="career-empty-find-jobs">Find jobs <ArrowRight size={14} /></Link></Empty>}
     </> : <>
       <div className="career-result-heading"><h2 data-testid="career-job-count">{rows.length} matching listings</h2><span>No hiring-odds claims. Check the employer's full posting.</span></div>
       {feed.isPending ? <div className="career-job-grid" role="status" aria-label="Loading employer jobs">{[1, 2, 3, 4].map(value => <div key={value} className="career-job-skeleton" />)}</div>
@@ -404,15 +404,15 @@ function CareerRoutes() {
   const [location] = useLocation();
   const store = useCareer();
   if (legacyPaths.includes(location)) return <Suspense fallback={<div role="status" className="career-loading">Opening recruiter preview…</div>}><LegacyRecruiterApp /></Suspense>;
-  if (location === "/") return <Suspense fallback={<div role="status" className="career-loading">Opening Find Work Privately…</div>}><Landing /></Suspense>;
+  if (location === "/private") return <Suspense fallback={<div role="status" className="career-loading">Opening the private recruiter pilot…</div>}><Landing /></Suspense>;
   let content: ReactNode;
-  if (["/jobs", "/pipeline"].includes(location)) content = <Jobs key={store.owner} />;
+  if (["/", "/jobs", "/pipeline"].includes(location)) content = <Jobs key={store.owner} />;
   else if (location === "/studio") content = <Studio key={store.owner} />;
   else if (location === "/research") content = <Suspense fallback={<div role="status" className="career-loading">Opening private research…</div>}><ResearchPage key={store.owner} /></Suspense>;
   else if (location === "/background") content = <Background key={`${store.owner}-${store.workspace.background?.version ?? 0}`} />;
   else if (location === "/workspace-privacy") content = <Privacy />;
   else if (location === "/account") content = <Suspense fallback={<div role="status" className="career-loading">Opening account…</div>}><AccountPage /></Suspense>;
-  else content = <Empty title="That page is not here."><p>Return to your career workspace.</p><Link className="button primary" href="/jobs">Find jobs</Link></Empty>;
+  else content = <Empty title="That page is not here."><p>Return to your career workspace.</p><Link className="button primary" href="/">Find jobs</Link></Empty>;
   return <Shell>{content}</Shell>;
 }
 export default function CareerApp() {

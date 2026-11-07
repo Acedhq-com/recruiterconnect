@@ -21,7 +21,7 @@ export default function Landing() {
         <a href="#how-it-works">How it works</a>
         <a href="#recruiters">For recruiters</a>
         <a href="#faq">Privacy</a>
-        <Link href="/jobs" data-testid="landing-nav-workspace">Workspace</Link>
+        <Link href="/" data-testid="landing-nav-workspace">Job search workspace</Link>
       </nav>
       <button className="button primary" data-testid="landing-nav-join" onClick={() => setPlan("candidate")}>Join the pilot</button>
     </header>
@@ -117,7 +117,7 @@ export default function Landing() {
       <span><ShieldCheck size={14} /> {PUBLIC_BRAND}</span>
       <nav aria-label="Footer">
         <Link href="/workspace-privacy">Privacy</Link>
-        <Link href="/jobs">Workspace</Link>
+        <Link href="/">Job search workspace</Link>
         <Link href="/account">Account</Link>
         <Link href="/recruiters">Recruiter preview</Link>
       </nav>
