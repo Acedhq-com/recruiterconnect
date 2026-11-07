@@ -93,3 +93,44 @@
   .landing-hero .landing-actions .button { width: 100%; min-width: 0; }
   .landing-footer nav { margin-left: 0; }
 }
+
+/* Pilot sign-up dialog (landing theme) */
+.landing-dialog {
+  padding: 0; border: 1px solid var(--l-border); border-radius: 14px;
+  width: min(94vw, 540px); max-height: min(92vh, 860px);
+  background: var(--l-surface); color: var(--l-ink);
+  font: 400 1rem/1.55 var(--l-font);
+  box-shadow: 0 24px 80px #00000080;
+}
+.landing-dialog::backdrop { background: #0a0e12cc; backdrop-filter: blur(3px); }
+.landing-dialog > header { display: flex; align-items: flex-start; gap: 1rem; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid var(--l-border); }
+.landing-dialog > header h2 { flex: 1; font-size: 1.4rem; margin: 0; line-height: 1.25; }
+.landing-dialog-close { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--l-muted); background: transparent; border: 0; }
+.landing-dialog-close:hover { background: var(--l-soft); color: var(--l-ink); }
+.landing-dialog form, .landing-dialog-success { padding: 1.25rem 1.5rem 1.5rem; }
+.landing-dialog-intro { color: var(--l-muted); font-size: .95rem; margin-bottom: 1.25rem; }
+.landing-dialog label { display: block; font-size: .88rem; font-weight: 700; color: var(--l-ink); margin-top: 1rem; }
+.landing-dialog label small { display: block; font-weight: 400; color: var(--l-muted); font-size: .82rem; margin-top: .35rem; }
+.landing-dialog input:not([type="checkbox"]) {
+  display: block; width: 100%; min-height: 44px; margin-top: .4rem; padding: .5rem .75rem;
+  background: var(--l-bg); color: var(--l-ink); border: 1px solid var(--l-border); border-radius: 8px; font: inherit; font-weight: 400;
+}
+.landing-dialog input:focus-visible { outline: 2px solid var(--l-green); outline-offset: 1px; }
+.landing-dialog input[aria-invalid="true"] { border-color: #ffb4ac; }
+.landing-dialog-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.landing-dialog-row label { margin-top: 0; }
+.landing-honeypot { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.landing-dialog-consent { display: flex !important; gap: .65rem; align-items: flex-start; font-weight: 400 !important; font-size: .9rem !important; color: var(--l-muted) !important; margin-top: 1.25rem !important; cursor: pointer; }
+.landing-dialog-consent input { width: 18px; height: 18px; margin-top: .15rem; accent-color: var(--l-green); flex-shrink: 0; }
+.landing-dialog-error { margin-top: 1rem; padding: .65rem .85rem; border-radius: 8px; background: #3a2220; color: #ffd3cd; font-size: .9rem; }
+.landing-dialog-notice { display: flex; gap: .6rem; align-items: flex-start; margin-top: 1rem; padding: .75rem .85rem; border-radius: 8px; background: var(--l-soft); color: var(--l-muted); font-size: .9rem; }
+.landing-dialog-notice svg { color: var(--l-green); flex-shrink: 0; margin-top: .15rem; }
+.landing-dialog-notice p { margin: 0; }
+.landing-dialog form > .button { width: 100%; margin-top: 1.25rem; }
+.landing-dialog-fine { font-size: .82rem; color: var(--l-muted); margin-top: .85rem; }
+.landing-dialog-success { text-align: center; }
+.landing-dialog-success > svg { color: var(--l-green); margin: .5rem auto .75rem; display: block; }
+.landing-dialog-success h3 { font-size: 1.2rem; margin-bottom: .5rem; }
+.landing-dialog-success p { color: var(--l-muted); }
+.landing-dialog-success .button { margin-top: 1.25rem; }
+@media (max-width: 520px) { .landing-dialog-row { grid-template-columns: 1fr; } .landing-dialog-row label + label { margin-top: 1rem; } }
