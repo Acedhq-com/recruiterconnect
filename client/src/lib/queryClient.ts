@@ -4,11 +4,13 @@ import { QueryClient } from "@tanstack/react-query";
 const proxy = "__PORT_5000__";
 const API_BASE = proxy.startsWith("__") ? "" : proxy;
 
-export async function apiRequest(method: string, url: string, data?: unknown): Promise<Response> {
+export async function apiRequest(method: string, url: string, data?: unknown,
+  headers: Record<string, string> = {}): Promise<Response> {
   const response = await fetch(`${API_BASE}${url}`, {
     method,
+    headers: { ...(data === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
     ...(data === undefined ? {} : {
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+      body: JSON.stringify(data),
     }),
   });
   if (!response.ok) {

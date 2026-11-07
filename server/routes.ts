@@ -18,7 +18,7 @@ export function registerRoutes(app: Express, store: IStorage = storage): void {
         const isPreviewProxy = process.env.ALLOW_PREVIEW_PROXY === "1"
           && (originHost === "www.perplexity.ai" || originHost === "perplexity.ai" || originHost.endsWith(".pplx.app"));
         if (originHost !== requestHost && !isPreviewProxy) {
-          response.status(403).json({ message: "Please submit the form from the RecruiterConnect website." });
+          response.status(403).json({ message: "Please submit the form from the Find Work Privately website." });
           return;
         }
       } catch {
