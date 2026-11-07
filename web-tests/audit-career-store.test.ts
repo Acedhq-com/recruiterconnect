@@ -12,7 +12,7 @@ import { emptyBackground, emptyWorkspace } from "../shared/career-schema.js";
 let current: ReturnType<typeof useCareer>;
 let root: Root;
 let container: HTMLDivElement;
-const guest = { user: null, account: null, profile: null, authEnabled: false,
+const guest = { user: null, account: null, profile: null, privacy: null, authEnabled: false,
   method: "email-code", appOrigin: "https://findworkprivately.com" } as PublicAccountSession;
 const ownerA = "11111111-1111-4111-8111-111111111111";
 const ownerB = "22222222-2222-4222-8222-222222222222";

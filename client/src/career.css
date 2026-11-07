@@ -239,6 +239,8 @@
 .career-shell .visibility-preview { background: var(--color-surface); color: var(--color-ink); }
 .career-shell .notice { background: var(--color-soft); color: var(--color-ink); }
 .career-shell .badge { background: var(--color-green-soft); color: var(--color-green); }
+.career-shell .field-error { background: #3a2220; color: #ffd3cd; border: 1px solid #7a3d37; }
+.career-shell .privacy-panel .account-card-title > div { flex: 1 1 20rem; }
 @media (max-width: 1150px) {
   .career-shell { grid-template-columns: 190px minmax(0, 1fr); }
   .career-main { padding-inline: var(--space-5); }
