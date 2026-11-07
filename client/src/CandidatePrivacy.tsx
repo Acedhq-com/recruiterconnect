@@ -3,18 +3,18 @@ import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Building2, Check, Eye, LockKeyhole, Plus, X } from "lucide-react";
 import { MAX_BLOCKS, addBlockSchema, saveEmployerSchema } from "../../shared/account-schema.js";
-import type { PrivateAccount, PrivateProfile, PublicAccountSession, CandidatePrivacy } from "../../shared/account-schema.js";
+import type { DiscoveryStatus, PrivateAccount, PublicAccountSession, CandidatePrivacy } from "../../shared/account-schema.js";
 import { apiRequest } from "./lib/queryClient.js";
 
 const post = async (path: string, input: unknown, owner: string): Promise<PublicAccountSession> =>
   (await apiRequest("POST", path, input, { "X-Account-Id": owner })).json();
 
 type Props = {
-  account: PrivateAccount; profile: PrivateProfile; privacy: CandidatePrivacy;
+  account: PrivateAccount; privacy: CandidatePrivacy; discovery: DiscoveryStatus | null;
   onSaved: (value: PublicAccountSession) => void;
 };
 
-export default function CandidatePrivacyPanel({ account, profile, privacy, onSaved }: Props) {
+export default function CandidatePrivacyPanel({ account, privacy, discovery, onSaved }: Props) {
   const owner = account.user_id;
   const [employer, setEmployer] = useState(privacy.current_employer ?? "");
   const [company, setCompany] = useState("");
@@ -60,7 +60,9 @@ export default function CandidatePrivacyPanel({ account, profile, privacy, onSav
 
     <div className="privacy-note" role="note" data-testid="privacy-not-live">
       <Eye size={18} aria-hidden="true" />
-      <p>Recruiter search is not open yet, so nobody can find anyone today. Setting this up now puts your protection in place before it opens. You will be asked again, with this list in front of you, before you become visible to anyone.</p>
+      <p>{discovery?.enabled
+        ? "These blocks apply to every search. A recruiter whose firm or hiring clients match anything here never sees you."
+        : "Nobody can find you unless you choose to be found, further down. Set this up first: when you do turn discoverability on, these blocks apply to every search."}</p>
     </div>
 
     <form onSubmit={submitEmployer} noValidate aria-describedby="privacy-employer-help">
@@ -109,17 +111,6 @@ export default function CandidatePrivacyPanel({ account, profile, privacy, onSav
         {companyError && <p className="field-error" role="alert">{companyError}</p>}
         {addBlock.error && <p className="field-error" role="alert">{addBlock.error.message}</p>}
       </form>
-    </div>
-
-    <div className="privacy-preview" data-testid="privacy-preview">
-      <h3>What a recruiter would see</h3>
-      <p className="fine-print">A preview only, because recruiter search is not live. Built from your private draft above.</p>
-      <div className="privacy-card">
-        <strong>{profile.headline || "Add a headline in your private draft"}</strong>
-        <span>{profile.work_preference}</span>
-        {profile.skills.length > 0 && <ul aria-label="Skills">{profile.skills.map(skill => <li key={skill}>{skill}</li>)}</ul>}
-      </div>
-      <p className="fine-print"><strong>Never shown:</strong> your name, email, current employer, or this block list.</p>
     </div>
 
     <p className="fine-print privacy-limits"><strong>What this can and cannot do.</strong> It controls what Find Work Privately shows. It cannot stop a recruiter or coworker finding you on other sites. Companies are matched by name, so list a parent firm or affiliate under the names people use for it.</p>

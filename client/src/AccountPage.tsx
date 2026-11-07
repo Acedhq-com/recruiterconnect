@@ -8,9 +8,11 @@ import {
   PUBLIC_APP_ORIGIN, onboardAccountSchema, savePrivateProfileSchema,
   startEmailSchema, verifyEmailSchema,
 } from "../../shared/account-schema.js";
-import type { OnboardAccount, PrivateAccount, PrivateProfile, PublicAccountSession } from "../../shared/account-schema.js";
+import type { DiscoveryStatus, OnboardAccount, PrivateAccount, PrivateProfile, PublicAccountSession } from "../../shared/account-schema.js";
 import { apiRequest, queryClient } from "./lib/queryClient.js";
 import CandidatePrivacyPanel from "./CandidatePrivacy.js";
+import CandidateDiscoveryPanel, { discoveryLabel } from "./CandidateDiscovery.js";
+import RecruiterWorkspace from "./RecruiterWorkspace.js";
 
 const sessionKey = ["/api/auth/session"];
 const loadSession = async (): Promise<PublicAccountSession> => (await apiRequest("GET", sessionKey[0]!)).json();
@@ -55,7 +57,7 @@ function FirstPartyAccount() {
           : <PrivateWorkspace key={data.user.id} data={data} onSaved={acceptSaved} />}
       </div>
       <AccountSafety key={data.user.id} data={data} onSaved={acceptSaved} onSignedOut={(revoked) => {
-        accept({ ...data, user: null, account: null, profile: null });
+        accept({ ...data, user: null, account: null, profile: null, privacy: null, recruiter: null, discovery: null });
         setNotice(revoked ? "Signed out of this browser." : "Signed out here. Server-side session revocation could not be confirmed; contact the operator if this persists.");
       }} />
     </div>}
@@ -109,8 +111,8 @@ function OnboardingPanel({ email, owner, onSaved }: { email: string; owner: stri
     <label className="field-label" htmlFor="account-name">Private display name</label>
     <input id="account-name" data-testid="input-account-name" autoComplete="name" {...form.register("displayName")} />
     <fieldset className="account-kind"><legend>How will you use the private beta?</legend>
-      <label className="radio-row"><input type="radio" value="candidate" data-testid="account-kind-candidate" {...form.register("kind")} /><span><strong>Candidate</strong><small>Save a private draft. Discovery remains off.</small></span></label>
-      <label className="radio-row"><input type="radio" value="recruiter" data-testid="account-kind-recruiter" {...form.register("kind")} /><span><strong>Recruiter</strong><small>Begin onboarding. No candidate access or verification is granted.</small></span></label>
+      <label className="radio-row"><input type="radio" value="candidate" data-testid="account-kind-candidate" {...form.register("kind")} /><span><strong>Candidate</strong><small>Save a private draft. Nobody can find you unless you choose to be found.</small></span></label>
+      <label className="radio-row"><input type="radio" value="recruiter" data-testid="account-kind-recruiter" {...form.register("kind")} /><span><strong>Recruiter</strong><small>Apply for verification. You see no candidates until we have checked you.</small></span></label>
     </fieldset>
     <label className="check-row consent"><input type="checkbox" data-testid="account-beta-consent" {...form.register("acknowledgePrivateBeta")} /><span>I understand that this account does not enable candidate visibility, verify a recruiter, or start a paid subscription.</span></label>
     {Object.keys(form.formState.errors).length > 0 && <p className="field-error" role="alert">Add your name, choose a type, and acknowledge the private-beta boundary.</p>}
@@ -134,16 +136,19 @@ const toProfileValues = (account: PrivateAccount, profile: PrivateProfile): Prof
 function PrivateWorkspace({ data, onSaved }: { data: PublicAccountSession; onSaved: (value: PublicAccountSession) => void }) {
   const account = data.account!;
   if (account.status !== "active") return <div className="settings-panel account-card"><LockKeyhole size={26} /><h2>{account.status === "deletion_requested" ? "Your deletion request is recorded." : "This account is paused."}</h2><p>{account.status === "deletion_requested" ? "This is a private request for operator review, not a claim that your records have already been deleted. Editing and discovery are blocked." : "Account changes are unavailable while the operator reviews this account."}</p></div>;
-  if (account.account_kind === "recruiter") return <div className="settings-panel account-card"><ShieldCheck size={27} /><h2>A recruiter account, not verified access.</h2><p>Your email is confirmed and your account is private. Company membership, recruiter verification, production discovery, and billing are separate launch steps.</p><div className="setup-notice"><LockKeyhole size={20} /><p>No real candidate directory, identity, employer information, or paid entitlement is unlocked by choosing this account type.</p></div></div>;
+  if (account.account_kind === "recruiter") return <RecruiterWorkspace key={`recruiter-${account.user_id}`} account={account}
+    recruiter={data.recruiter} onSaved={onSaved} />;
   if (!data.profile) return <div className="settings-panel account-card"><h2>Your private draft is unavailable.</h2><p>No profile data is being guessed or substituted with a sample. Please reload the account page.</p></div>;
   return <div className="privacy-stack">
-    <PrivateProfileForm key={account.user_id} account={account} profile={data.profile} onSaved={onSaved} />
-    {data.privacy && <CandidatePrivacyPanel key={`privacy-${account.user_id}`} account={account} profile={data.profile}
-      privacy={data.privacy} onSaved={onSaved} />}
+    <PrivateProfileForm key={account.user_id} account={account} profile={data.profile} discovery={data.discovery} onSaved={onSaved} />
+    {data.privacy && <CandidatePrivacyPanel key={`privacy-${account.user_id}`} account={account}
+      privacy={data.privacy} discovery={data.discovery} onSaved={onSaved} />}
+    {data.privacy && data.discovery && <CandidateDiscoveryPanel key={`discovery-${account.user_id}`} account={account}
+      profile={data.profile} discovery={data.discovery} onSaved={onSaved} />}
   </div>;
 }
 
-function PrivateProfileForm({ account, profile, onSaved }: { account: PrivateAccount; profile: PrivateProfile; onSaved: (value: PublicAccountSession) => void }) {
+function PrivateProfileForm({ account, profile, discovery, onSaved }: { account: PrivateAccount; profile: PrivateProfile; discovery: DiscoveryStatus | null; onSaved: (value: PublicAccountSession) => void }) {
   const [saved, setSaved] = useState(false);
   const form = useForm<ProfileValues>({ resolver: zodResolver(profileFormSchema), defaultValues: toProfileValues(account, profile) });
   const mutation = useMutation({
@@ -155,7 +160,7 @@ function PrivateProfileForm({ account, profile, onSaved }: { account: PrivateAcc
     onError: () => { void queryClient.invalidateQueries({ queryKey: sessionKey }); },
   });
   return <form className="settings-panel account-card" onSubmit={form.handleSubmit(input => { setSaved(false); mutation.mutate(input); })}>
-    <div className="account-card-title"><div><h2>Your private candidate draft</h2><p>Saved to your account, never to the public sample directory.</p></div><span className="badge"><LockKeyhole size={13} />Not discoverable</span></div>
+    <div className="account-card-title"><div><h2>Your private candidate draft</h2><p>Saved to your account, never to the public sample directory.</p></div><span className="badge" data-testid="profile-visibility"><LockKeyhole size={13} />{discoveryLabel(discovery)}</span></div>
     <label className="field-label" htmlFor="private-name">Private display name</label><input id="private-name" data-testid="input-private-name" autoComplete="name" {...form.register("displayName")} />
     <label className="field-label" htmlFor="private-headline">Professional headline</label><input id="private-headline" data-testid="input-private-headline" placeholder="e.g. Senior accountant" {...form.register("headline")} />
     <label className="field-label" htmlFor="private-skills">Skills, separated by commas</label><input id="private-skills" data-testid="input-private-skills" placeholder="e.g. US GAAP, Excel, Reconciliations" {...form.register("skillsText")} />
@@ -166,7 +171,7 @@ function PrivateProfileForm({ account, profile, onSaved }: { account: PrivateAcc
     {mutation.error && <button type="button" className="text-button" data-testid="button-reload-private-profile" onClick={() => { form.reset(toProfileValues(account, profile)); mutation.reset(); }}>Reload the latest saved draft</button>}
     {saved && <p className="account-save-status" role="status"><Check size={16} />Your private draft is saved.</p>}
     <button className="button primary full-width" type="submit" data-testid="button-save-private-profile" disabled={mutation.isPending}>{mutation.isPending ? "Saving…" : "Save private draft"}<Check size={16} /></button>
-    <p className="fine-print">Do not put confidential employer or client information in your headline or skills. These fields cannot activate discovery.</p>
+    <p className="fine-print">Do not put confidential employer or client information in your headline or skills. Saving this draft never makes you discoverable; that is a separate choice further down.</p>
   </form>;
 }
 

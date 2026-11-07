@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { registerAccountRoutes } from "../server/account-routes.js";
 import { AccountError } from "../server/account-service.js";
 import type { IAccountService, VerifiedSession } from "../server/account-service.js";
-import type { CandidatePrivacy, PrivateAccount, PrivateProfile } from "../shared/account-schema.js";
+import type { CandidatePrivacy, DiscoveryStatus, PrivateAccount, PrivateProfile } from "../shared/account-schema.js";
 
 afterEach(() => vi.unstubAllEnvs());
 const userId = "f4706aa9-4e3b-46a6-843f-0f7478a21c0e";
@@ -18,6 +18,8 @@ const profile: PrivateProfile = { headline: "Private draft", skills: ["Analysis"
   discovery_active: false, version: 1 };
 const privacy: CandidatePrivacy = { current_employer: "Synthetic Employer", blocks: [
   { id: "0b2f1c52-93d5-4f6a-9d0e-3a3c6f1a7d11", company_name: "Synthetic Employer", source: "current_employer" }] };
+const discovery: DiscoveryStatus = { enabled: false, review_status: "pending", handle: null, consent_version: null,
+  current_consent_version: "discovery-v1", ready: true, visible: false, blockers: ["not_enabled"] };
 const onboarding = { kind: "candidate", displayName: "Synthetic Account", acknowledgePrivateBeta: true };
 const save = { displayName: "Synthetic Account", headline: "Private draft", skills: ["Analysis"],
   workPreference: "Remote", expectedVersion: 1 };
@@ -26,9 +28,11 @@ function setup(overrides: Partial<IAccountService> = {}) {
     enabled: () => true, start: vi.fn(async () => {}),
     verify: vi.fn(async () => session), resolve: vi.fn(async () => session),
     logout: vi.fn(async () => true),
-    records: vi.fn(async () => ({ account, profile, privacy })),
+    records: vi.fn(async () => ({ account, profile, privacy, recruiter: null, discovery })),
     onboard: vi.fn(async () => {}), saveProfile: vi.fn(async () => {}),
     saveEmployer: vi.fn(async () => {}), addBlock: vi.fn(async () => {}), removeBlock: vi.fn(async () => {}),
+    saveRecruiterFirm: vi.fn(async () => {}), addClient: vi.fn(async () => {}), removeClient: vi.fn(async () => {}),
+    submitRecruiter: vi.fn(async () => {}), setDiscovery: vi.fn(async () => {}), search: vi.fn(async () => []),
     requestDeletion: vi.fn(async () => {}), cancelDeletion: vi.fn(async () => {}),
     ...overrides,
   };
@@ -44,7 +48,7 @@ function write(app: express.Express, path: string, body: Record<string, unknown>
 test("unconfigured auth reports disabled without contacting a provider", async () => {
   const { app, service } = setup({ enabled: () => false });
   const result = await request(app).get("/api/auth/session");
-  expect(result.body).toEqual({ user: null, account: null, profile: null, privacy: null,
+  expect(result.body).toEqual({ user: null, account: null, profile: null, privacy: null, recruiter: null, discovery: null,
     authEnabled: false, appOrigin: "https://findworkprivately.com", method: "email-code" });
   expect(service.resolve).not.toHaveBeenCalled();
   expect(result.headers["cache-control"]).toContain("private, no-store");
@@ -154,7 +158,7 @@ test.each([{ user_id: "another-user" }, { discovery_active: true }, { account_ki
     expect(service.saveProfile).not.toHaveBeenCalled();
   });
 test("cross-account records fail closed before serialization", async () => {
-  const { app } = setup({ records: async () => ({ account: { ...account, user_id: "wrong-owner" }, profile, privacy }) });
+  const { app } = setup({ records: async () => ({ account: { ...account, user_id: "wrong-owner" }, profile, privacy, recruiter: null, discovery }) });
   const result = await request(app).get("/api/auth/session");
   expect(result.status).toBe(503);
   expect(JSON.stringify(result.body)).not.toContain("wrong-owner");
@@ -249,4 +253,120 @@ test("a full block list surfaces as a clear conflict without leaking details", a
   const result = await write(app, "/api/account/blocks", { company: "Firm" });
   expect(result.status).toBe(409);
   expect(result.body.message).toContain("50");
+});
+
+// --- Phase 2: recruiter onboarding, consented discovery and anonymous search ---
+const clientId = "7c1f2a4e-5b6d-4c8e-9f01-2a3b4c5d6e7f";
+const consent = { enabled: true, consentVersion: "discovery-v1" };
+const recruiterRoutes: [string, Record<string, unknown>, keyof IAccountService][] = [
+  ["/api/account/recruiter", { firm: "Zenith Search", proofUrl: "https://example.com/zenith" }, "saveRecruiterFirm"],
+  ["/api/account/recruiter/clients", { company: "Orion Corp" }, "addClient"],
+  ["/api/account/recruiter/clients/remove", { id: clientId }, "removeClient"],
+  ["/api/account/recruiter/submit", {}, "submitRecruiter"],
+  ["/api/account/discovery", consent, "setDiscovery"],
+  ["/api/recruiter/search", { query: "gaap" }, "search"],
+];
+const phase2Methods: (keyof IAccountService)[] = ["saveRecruiterFirm", "addClient", "removeClient",
+  "submitRecruiter", "setDiscovery", "search"];
+test.each(recruiterRoutes)("%s reaches only %s with validated input", async (path, body, method) => {
+  const { app, service } = setup();
+  const result = await write(app, path, body);
+  expect(result.status).toBe(200);
+  expect(service[method]).toHaveBeenCalledOnce();
+  for (const other of phase2Methods.filter(name => name !== method)) expect(service[other]).not.toHaveBeenCalled();
+  expect(result.headers["cache-control"]).toContain("private, no-store");
+});
+test("the firm, client and discovery calls pass the parsed values to the service", async () => {
+  const { app, service } = setup();
+  await write(app, "/api/account/recruiter", { firm: "  Zenith Search  ", proofUrl: "  https://example.com/zenith  " });
+  expect(service.saveRecruiterFirm).toHaveBeenCalledWith(session, { firm: "Zenith Search", proofUrl: "https://example.com/zenith" });
+  await write(app, "/api/account/recruiter/clients", { company: " Orion Corp " });
+  expect(service.addClient).toHaveBeenCalledWith(session, "Orion Corp");
+  await write(app, "/api/account/recruiter/clients/remove", { id: clientId });
+  expect(service.removeClient).toHaveBeenCalledWith(session, clientId);
+  await write(app, "/api/account/discovery", consent);
+  expect(service.setDiscovery).toHaveBeenCalledWith(session, consent);
+  await write(app, "/api/account/discovery", { enabled: false });
+  expect(service.setDiscovery).toHaveBeenLastCalledWith(session, { enabled: false });
+});
+test.each([
+  ["/api/account/recruiter", {}],
+  ["/api/account/recruiter", { firm: "" }],
+  ["/api/account/recruiter", { firm: "X" }],
+  ["/api/account/recruiter", { firm: "Zenith", proofUrl: "http://example.com/insecure" }],
+  ["/api/account/recruiter", { firm: "Zenith", proofUrl: "javascript:alert(1)" }],
+  ["/api/account/recruiter", { firm: "Zenith", proofUrl: "https://exa mple.com" }],
+  ["/api/account/recruiter", { firm: "Zenith", status: "verified" }],
+  ["/api/account/recruiter", { firm: "Zenith", user_id: userId }],
+  ["/api/account/recruiter/clients", { company: "" }],
+  ["/api/account/recruiter/clients", { company: "Orion", user_id: userId }],
+  ["/api/account/recruiter/clients/remove", { id: "not-a-uuid" }],
+  ["/api/account/recruiter/submit", { status: "verified" }],
+  ["/api/account/discovery", {}],
+  ["/api/account/discovery", { enabled: true }],
+  ["/api/account/discovery", { enabled: true, consentVersion: "discovery-v0" }],
+  ["/api/account/discovery", { enabled: true, consentVersion: "discovery-v1", review_status: "approved" }],
+  ["/api/account/discovery", { enabled: false, consentVersion: "discovery-v1" }],
+  ["/api/account/discovery", { enabled: "yes", consentVersion: "discovery-v1" }],
+  ["/api/recruiter/search", { query: "x".repeat(81) }],
+  ["/api/recruiter/search", { query: "bad\nquery" }],
+  ["/api/recruiter/search", { workPreference: "Anywhere" }],
+  ["/api/recruiter/search", { offset: -1 }],
+  ["/api/recruiter/search", { offset: 101 }],
+  ["/api/recruiter/search", { offset: 1.5 }],
+  ["/api/recruiter/search", { limit: 500 }],
+  ["/api/recruiter/search", { user_id: userId }],
+])("%s rejects %j without reaching the service", async (path, body) => {
+  const { app, service } = setup();
+  expect((await write(app, path, body)).status).toBe(400);
+  for (const method of phase2Methods) expect(service[method]).not.toHaveBeenCalled();
+});
+test.each(recruiterRoutes)("%s requires a verified session, an enabled service and a same-origin request", async (path, body) => {
+  const unsigned = setup({ resolve: async () => null });
+  expect((await write(unsigned.app, path, body)).status).toBe(401);
+  const disabled = setup({ enabled: () => false });
+  expect((await write(disabled.app, path, body)).status).toBe(503);
+  const foreign = setup();
+  const cross = await request(foreign.app).post(path).set("host", "findworkprivately.com")
+    .set("origin", "https://evil.example").send(body);
+  expect(cross.status).toBe(403);
+  const noOrigin = await request(foreign.app).post(path).set("host", "findworkprivately.com").send(body);
+  expect(noOrigin.status).toBe(403);
+  for (const { service } of [unsigned, disabled, foreign]) {
+    for (const method of phase2Methods) expect(service[method]).not.toHaveBeenCalled();
+  }
+});
+test("search is POST-only so queries never appear in URLs or logs", async () => {
+  const { app } = setup();
+  expect((await request(app).get("/api/recruiter/search?query=gaap")).status).toBe(404);
+});
+test("search returns only the anonymous cards plus a next offset", async () => {
+  const cards = Array.from({ length: 20 }, (_, n) => ({ handle: `RC-${String(n).padStart(12, "0")}`,
+    headline: "Senior accountant", skills: ["US GAAP"], work_preference: "Remote" as const }));
+  const { app, service } = setup({ search: vi.fn(async () => cards) });
+  const first = await write(app, "/api/recruiter/search", { query: "gaap" });
+  expect(first.body).toEqual({ results: cards, nextOffset: 20 });
+  expect(service.search).toHaveBeenCalledWith(session, { query: "gaap" });
+  const last = await write(app, "/api/recruiter/search", { offset: 100 });
+  expect(last.body.nextOffset).toBeNull();
+  const partial = setup({ search: vi.fn(async () => cards.slice(0, 3)) });
+  expect((await write(partial.app, "/api/recruiter/search", {})).body.nextOffset).toBeNull();
+  expect(JSON.stringify(first.body)).not.toContain(userId);
+});
+test("search failures stay sanitized and rate limits stay rate limits", async () => {
+  const limited = setup({ search: async () => { throw new AccountError(429, "You have reached the search limit for this hour. Try again later."); } });
+  const result = await write(limited.app, "/api/recruiter/search", {});
+  expect(result.status).toBe(429);
+  const broken = setup({ search: async () => { throw new Error("select * from candidate_blocks failed"); } });
+  const failure = await write(broken.app, "/api/recruiter/search", {});
+  expect(failure.status).toBe(503);
+  expect(JSON.stringify(failure.body)).not.toContain("candidate_blocks");
+});
+test("the session response carries the recruiter record and discovery status for the owner only", async () => {
+  const recruiter = { firm_name: "Zenith Search", proof_url: null, status: "draft" as const, submitted_at: null,
+    verified_at: null, clients: [] };
+  const { app } = setup({ records: vi.fn(async () => ({ account, profile: null, privacy: null, recruiter, discovery: null })) });
+  const result = await request(app).get("/api/auth/session").set("cookie", "fwp-access=a; fwp-refresh=b");
+  expect(result.body.recruiter).toEqual(recruiter);
+  expect(result.body.discovery).toBeNull();
 });

@@ -132,7 +132,7 @@ function App() {
           <button className="avatar-button" aria-label="About this demo workspace" data-testid="button-workspace-info" onClick={() => setModal({ kind: "trust" })}>H</button>
         </header>
         <main id="main-content" tabIndex={-1}>
-          <div className="demo-banner"><span className="status-dot" /><strong>{location === "/account" ? "Private account beta" : "Interactive preview"}</strong><span>{location === "/account" ? "Private account setup only. Production discovery and billing are not enabled." : "All profiles are synthetic. No real candidate data or messages."}</span></div>
+          <div className="demo-banner"><span className="status-dot" /><strong>{location === "/account" ? "Private account beta" : "Interactive preview"}</strong><span>{location === "/account" ? "Private beta. Candidates choose whether to be found, recruiters are checked by hand, and nothing is billed." : "All profiles are synthetic. No real candidate data or messages."}</span></div>
           {notice && <div className="notice" role="status" data-testid="status-notice"><Check size={17} /><span>{notice}</span><button className="icon-button" aria-label="Dismiss update" onClick={() => setNotice("")}><X size={16} /></button></div>}
           {isDiscovery && <>
             <section className="page-heading">

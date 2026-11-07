@@ -29,6 +29,14 @@ function network(handler: (call: FetchCall) => Response | Promise<Response>) {
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { "Content-Type": "application/json" },
 });
+const handle = "RC-0A1B2C3D4E5F";
+const discoveryRow = { enabled: false, review_status: "pending", handle: null, consent_version: null,
+  current_consent_version: "discovery-v1", ready: true, visible: false, blockers: ["not_enabled"] };
+const clientId = "7c1f2a4e-5b6d-4c8e-9f01-2a3b4c5d6e7f";
+const recruiterAccount = { user_id: userId, account_kind: "recruiter", display_name: "Private recruiter",
+  status: "active", deletion_requested_at: null };
+const recruiterRow = { firm_name: "Zenith Search", proof_url: "https://example.com/zenith", status: "pending",
+  submitted_at: "2026-11-07T10:00:00Z", verified_at: null };
 beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "https://synthetic-auth.example");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "synthetic-publishable-key");
@@ -137,8 +145,14 @@ test("invalid refresh tokens produce no private identity", async () => {
 test("record queries are scoped to the verified user and use their JWT", async () => {
   const value = signed();
   network(({ url, init }) => {
-    expect(url.searchParams.get("user_id")).toBe(`eq.${userId}`);
     expect(new Headers(init.headers).get("authorization")).toBe(`Bearer ${value.tokens.accessToken}`);
+    if (url.pathname.endsWith("/rpc/my_discovery_status")) {
+      // The RPC derives the owner from the JWT; no user id is sent.
+      expect(url.searchParams.get("user_id")).toBeNull();
+      expect(JSON.parse(String(init.body ?? "{}"))).toEqual({});
+      return json(discoveryRow);
+    }
+    expect(url.searchParams.get("user_id")).toBe(`eq.${userId}`);
     if (url.pathname.endsWith("/member_accounts")) {
       return json([{ user_id: userId, account_kind: "candidate", display_name: "Private", status: "active", deletion_requested_at: null }]);
     }
@@ -152,12 +166,15 @@ test("record queries are scoped to the verified user and use their JWT", async (
   expect(records.profile?.discovery_active).toBe(false);
   expect(records.privacy).toEqual({ current_employer: "Private Employer LLP",
     blocks: [{ id: blockId, company_name: "Private Employer LLP", source: "current_employer" }] });
+  expect(records.discovery).toEqual(discoveryRow);
+  expect(records.recruiter).toBeNull();
 });
 test("a candidate with no employer or blocks yet gets an empty privacy record", async () => {
   network(({ url }) => {
     if (url.pathname.endsWith("/member_accounts")) {
       return json([{ user_id: userId, account_kind: "candidate", display_name: "Private", status: "active", deletion_requested_at: null }]);
     }
+    if (url.pathname.endsWith("/rpc/my_discovery_status")) return json(discoveryRow);
     if (url.pathname.endsWith("/candidate_blocks")) return json([]);
     if (url.pathname.endsWith("/candidate_private")) return json([]);
     return json([{ headline: "Private", skills: [], work_preference: "Remote", discovery_active: false, version: 1 }]);
@@ -175,17 +192,22 @@ test.each([
     if (url.pathname.endsWith("/member_accounts")) {
       return json([{ user_id: userId, account_kind: "candidate", display_name: "Private", status: "active", deletion_requested_at: null }]);
     }
+    if (url.pathname.endsWith("/rpc/my_discovery_status")) return json(discoveryRow);
     if (url.pathname.endsWith("/candidate_blocks")) return json(rows);
     if (url.pathname.endsWith("/candidate_private")) return json([]);
     return json([{ headline: "Private", skills: [], work_preference: "Remote", discovery_active: false, version: 1 }]);
   });
   await expect(new SupabaseAccountService().records(signed())).rejects.toMatchObject({ status: 503 });
 });
-test("a recruiter account does not load candidate privacy records", async () => {
-  const fetcher = network(() => json([{ user_id: userId, account_kind: "recruiter",
-    display_name: "Private recruiter", status: "active", deletion_requested_at: null }]));
-  expect((await new SupabaseAccountService().records(signed())).privacy).toBeNull();
-  expect(fetcher).toHaveBeenCalledOnce();
+test("a recruiter account loads no candidate records, drafts or discovery status", async () => {
+  const paths: string[] = [];
+  network(({ url }) => {
+    paths.push(url.pathname);
+    return url.pathname.endsWith("/member_accounts") ? json([recruiterAccount]) : json([]);
+  });
+  const records = await new SupabaseAccountService().records(signed());
+  expect(records).toMatchObject({ privacy: null, profile: null, discovery: null, recruiter: null });
+  expect(paths).toEqual(["/rest/v1/member_accounts", "/rest/v1/recruiter_profiles"]);
 });
 test.each([
   ["saveEmployer", "save_my_current_employer", { p_employer: "Acme LLP" }, (svc: SupabaseAccountService) => svc.saveEmployer(signed(), "Acme LLP")],
@@ -206,12 +228,6 @@ test("a full block list is a clear conflict, not a generic outage", async () => 
   await expect(new SupabaseAccountService().addBlock(signed(), "One Too Many")).rejects.toMatchObject({
     status: 409, message: expect.stringContaining("50"),
   });
-});
-test("a recruiter account does not load private candidate drafts", async () => {
-  const fetcher = network(() => json([{ user_id: userId, account_kind: "recruiter",
-    display_name: "Private recruiter", status: "active", deletion_requested_at: null }]));
-  expect((await new SupabaseAccountService().records(signed())).profile).toBeNull();
-  expect(fetcher).toHaveBeenCalledOnce();
 });
 test("an unexpectedly active draft fails closed in this account-only release", async () => {
   network(({ url }) => url.pathname.endsWith("/member_accounts")
@@ -258,4 +274,141 @@ test("sign-out targets the current user session, not a privileged admin endpoint
     return new Response(null, { status: 204 });
   });
   expect(await new SupabaseAccountService().logout(value.tokens.accessToken)).toBe(true);
+});
+
+// --- Phase 2: recruiter records, candidate discovery status and anonymous search ---
+const card = { handle, headline: "Senior accountant", skills: ["US GAAP"], work_preference: "Remote" };
+const recruiterNetwork = (rows: { profile?: unknown; clients?: unknown }) => network(({ url }) => {
+  if (url.pathname.endsWith("/member_accounts")) return json([recruiterAccount]);
+  if (url.pathname.endsWith("/recruiter_profiles")) return json(rows.profile === undefined ? [recruiterRow] : rows.profile);
+  if (url.pathname.endsWith("/recruiter_clients")) return json(rows.clients ?? [{ id: clientId, company_name: "Orion Corp" }]);
+  return json([]);
+});
+test("a recruiter's own firm record and hires-for list are read with their JWT", async () => {
+  const value = signed();
+  const fetcher = recruiterNetwork({});
+  const records = await new SupabaseAccountService().records(value);
+  expect(records.recruiter).toEqual({ ...recruiterRow, clients: [{ id: clientId, company_name: "Orion Corp" }] });
+  for (const [, init] of fetcher.mock.calls) {
+    expect(new Headers((init as RequestInit).headers).get("authorization")).toBe(`Bearer ${value.tokens.accessToken}`);
+  }
+});
+test("a recruiter with no firm yet has no recruiter record", async () => {
+  const fetcher = recruiterNetwork({ profile: [] });
+  expect((await new SupabaseAccountService().records(signed())).recruiter).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+test.each([
+  ["an unknown status", { profile: [{ ...recruiterRow, status: "admin" }] }],
+  ["an extra profile column", { profile: [{ ...recruiterRow, user_id: userId }] }],
+  ["a client with an extra column", { clients: [{ id: clientId, company_name: "Orion", user_id: userId }] }],
+  ["a client with a non-UUID id", { clients: [{ id: "1", company_name: "Orion" }] }],
+  ["more than 30 clients", { clients: Array.from({ length: 31 }, (_, n) => ({
+    id: `7c1f2a4e-5b6d-4c8e-9f01-${String(n).padStart(12, "0")}`, company_name: `Client ${n}` })) }],
+])("%s fails closed for a recruiter record", async (_label, rows) => {
+  recruiterNetwork(rows);
+  await expect(new SupabaseAccountService().records(signed())).rejects.toMatchObject({ status: 503 });
+});
+test.each([
+  ["an unknown blocker", { ...discoveryRow, blockers: ["something_else"] }],
+  ["an extra field", { ...discoveryRow, user_id: userId }],
+  ["a malformed handle", { ...discoveryRow, handle: "RC-1042" }],
+  ["a missing field", { enabled: true }],
+])("%s fails closed for a candidate's discovery status", async (_label, row) => {
+  network(({ url }) => {
+    if (url.pathname.endsWith("/member_accounts")) {
+      return json([{ user_id: userId, account_kind: "candidate", display_name: "Private", status: "active", deletion_requested_at: null }]);
+    }
+    if (url.pathname.endsWith("/rpc/my_discovery_status")) return json(row);
+    if (url.pathname.endsWith("/candidate_blocks") || url.pathname.endsWith("/candidate_private")) return json([]);
+    return json([{ headline: "Private", skills: [], work_preference: "Remote", discovery_active: false, version: 1 }]);
+  });
+  await expect(new SupabaseAccountService().records(signed())).rejects.toMatchObject({ status: 503 });
+});
+test.each([
+  ["saveRecruiterFirm", "save_my_recruiter_firm", { p_firm: "Zenith", p_proof_url: "https://example.com/z" },
+    (svc: SupabaseAccountService) => svc.saveRecruiterFirm(signed(), { firm: "Zenith", proofUrl: "https://example.com/z" })],
+  ["saveRecruiterFirm without a link", "save_my_recruiter_firm", { p_firm: "Zenith", p_proof_url: null },
+    (svc: SupabaseAccountService) => svc.saveRecruiterFirm(signed(), { firm: "Zenith", proofUrl: "" })],
+  ["addClient", "add_my_client", { p_company: "Orion" }, (svc: SupabaseAccountService) => svc.addClient(signed(), "Orion")],
+  ["removeClient", "remove_my_client", { p_id: clientId }, (svc: SupabaseAccountService) => svc.removeClient(signed(), clientId)],
+  ["submitRecruiter", "submit_my_recruiter_profile", {}, (svc: SupabaseAccountService) => svc.submitRecruiter(signed())],
+  ["enabling discovery", "set_my_discovery", { p_enabled: true, p_consent_version: "discovery-v1" },
+    (svc: SupabaseAccountService) => svc.setDiscovery(signed(), { enabled: true, consentVersion: "discovery-v1" })],
+  ["disabling discovery", "set_my_discovery", { p_enabled: false, p_consent_version: null },
+    (svc: SupabaseAccountService) => svc.setDiscovery(signed(), { enabled: false })],
+] as const)("%s calls only the fixed %s RPC with the user's JWT", async (_name, rpc, body, call) => {
+  const value = signed();
+  network(({ url, init }) => {
+    expect(url.pathname).toBe(`/rest/v1/rpc/${rpc}`);
+    expect(JSON.parse(String(init.body))).toEqual(body);
+    expect(new Headers(init.headers).get("authorization")).toBe(`Bearer ${value.tokens.accessToken}`);
+    return json(null);
+  });
+  await call(new SupabaseAccountService());
+});
+test("search sends only the query, preference, page size and offset", async () => {
+  network(({ url, init }) => {
+    expect(url.pathname).toBe("/rest/v1/rpc/search_candidates");
+    expect(JSON.parse(String(init.body))).toEqual({ p_query: "gaap", p_work_preference: "Remote", p_limit: 20, p_offset: 20 });
+    return json([card]);
+  });
+  expect(await new SupabaseAccountService().search(signed(), { query: "gaap", workPreference: "Remote", offset: 20 })).toEqual([card]);
+});
+test("search defaults and empty results", async () => {
+  network(({ init }) => {
+    expect(JSON.parse(String(init.body))).toEqual({ p_query: null, p_work_preference: null, p_limit: 20, p_offset: 0 });
+    return json(null);
+  });
+  expect(await new SupabaseAccountService().search(signed(), {})).toEqual([]);
+});
+test.each([
+  ["a user id", { ...card, user_id: userId }],
+  ["an email", { ...card, email: "someone@example.com" }],
+  ["a current employer", { ...card, current_employer: "Secret LLP" }],
+  ["a display name", { ...card, display_name: "Jane Doe" }],
+  ["a blocked company", { ...card, company_name: "Secret LLP" }],
+  ["an unexpected handle", { ...card, handle: "RC-1042" }],
+  ["an unknown work preference", { ...card, work_preference: "Anywhere" }],
+  ["a missing headline", { handle, skills: [], work_preference: "Remote" }],
+])("search refuses to pass on a row containing %s", async (_label, row) => {
+  network(() => json([card, row]));
+  const attempt = new SupabaseAccountService().search(signed(), {});
+  await expect(attempt).rejects.toMatchObject({ status: 503 });
+  await attempt.catch(error => expect(JSON.stringify(error)).not.toContain("Secret"));
+});
+test("search refuses more rows than one page", async () => {
+  network(() => json(Array.from({ length: 21 }, (_, n) => ({ ...card, handle: `RC-${String(n).padStart(12, "0")}` }))));
+  await expect(new SupabaseAccountService().search(signed(), {})).rejects.toMatchObject({ status: 503 });
+});
+test.each([
+  ["53400", "Search limit reached", 429],
+  ["42501", "A verified recruiter account is required", 403],
+  ["22023", "Invalid search", 400],
+  ["OTHER", "PRIVATE_DATABASE_DETAIL", 503],
+] as const)("search database code %s maps to a sanitized %s", async (code, message, status) => {
+  network(() => json({ code, message }, 400));
+  const error = await new SupabaseAccountService().search(signed(), {}).catch((e: AccountError) => e);
+  expect(error).toBeInstanceOf(AccountError);
+  expect((error as AccountError).status).toBe(status);
+  expect((error as Error).message).not.toContain("PRIVATE_DATABASE_DETAIL");
+  expect((error as Error).message).not.toContain("A verified recruiter account is required");
+});
+test.each([
+  ["55000", "Finish your private draft first", 409, "headline"],
+  ["55000", "Update your details before applying again", 409, "not approved"],
+  ["22023", "Save your firm first", 409, "firm details"],
+  ["54000", "Hires-for list is full", 409, "30"],
+  ["42501", "This recruiter profile is paused", 403, "paused"],
+] as const)("known message %s %s becomes friendly text without relaying other database detail", async (code, message, status, text) => {
+  network(() => json({ code, message, details: "PRIVATE_DATABASE_DETAIL" }, 400));
+  const error = await new SupabaseAccountService().addClient(signed(), "Orion").catch((e: AccountError) => e);
+  expect((error as AccountError).status).toBe(status);
+  expect((error as Error).message).toContain(text);
+  expect((error as Error).message).not.toContain("PRIVATE_DATABASE_DETAIL");
+});
+test("an unknown 55000 message is not relayed", async () => {
+  network(() => json({ code: "55000", message: "table candidate_blocks row 7 violates something" }, 400));
+  const error = await new SupabaseAccountService().addClient(signed(), "Orion").catch((e: AccountError) => e);
+  expect((error as Error).message).not.toContain("candidate_blocks");
 });

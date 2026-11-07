@@ -20,7 +20,7 @@ test("RC-02: refresh-only logout must not claim server revocation without doing 
   const service: IAccountService = {
     enabled: () => true, start: vi.fn(), verify: vi.fn(), resolve, logout,
     records: vi.fn(), onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(),
-    requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
+    saveRecruiterFirm: vi.fn(), addClient: vi.fn(), removeClient: vi.fn(), submitRecruiter: vi.fn(), setDiscovery: vi.fn(), search: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
   };
   const app = express(); app.use(express.json()); registerAccountRoutes(app, service);
   const result = await request(app).post("/api/auth/logout")
@@ -57,7 +57,7 @@ test.each([
   const service: IAccountService = {
     enabled: () => true, start: vi.fn(), verify: vi.fn(), resolve, logout,
     records: vi.fn(), onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(),
-    requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
+    saveRecruiterFirm: vi.fn(), addClient: vi.fn(), removeClient: vi.fn(), submitRecruiter: vi.fn(), setDiscovery: vi.fn(), search: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
   };
   const app = express(); app.use(express.json()); registerAccountRoutes(app, service);
   const cookies = [entry.access ? "fwp-access=audit-access" : "",
@@ -83,7 +83,7 @@ test("RC-02: refresh-resolution exception cannot prevent browser logout", async 
     enabled: () => true, start: vi.fn(), verify: vi.fn(),
     resolve: vi.fn(async () => { throw new Error("synthetic provider failure"); }),
     logout: vi.fn(), records: vi.fn(), onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(),
-    requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
+    saveRecruiterFirm: vi.fn(), addClient: vi.fn(), removeClient: vi.fn(), submitRecruiter: vi.fn(), setDiscovery: vi.fn(), search: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
   };
   const app = express(); app.use(express.json()); registerAccountRoutes(app, service);
   const result = await request(app).post("/api/auth/logout")
