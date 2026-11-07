@@ -13,6 +13,7 @@ import { testJob } from "./career-fixtures.js";
 import { readFileSync } from "node:fs";
 const deployment = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8")) as {
   functions: { "api/index.ts": { maxDuration: number } };
+  rewrites: { source: string; destination: string }[];
 };
 
 const uid = "11111111-1111-4111-8111-111111111111";
@@ -54,6 +55,10 @@ describe("public employer feed boundary", () => {
   it("allows the bounded employer check to finish within the existing project's runtime cap", () => {
     expect(deployment.functions["api/index.ts"].maxDuration).toBeGreaterThanOrEqual(20);
   });
+  it("routes the public feed before a wildcard can inject a path query parameter", () => {
+    expect(deployment.rewrites[0]).toEqual({ source: "/api/jobs", destination: "/api" });
+    expect(deployment.rewrites[1]).toEqual({ source: "/api/:path*", destination: "/api" });
+  });
   it("reads the public-only adapter without account or storage access", async () => {
     const response = await request(app()).get("/api/jobs");
     expect(response.status).toBe(200);
@@ -63,6 +68,10 @@ describe("public employer feed boundary", () => {
   });
   it("rejects caller-selected feed URLs before any network work", async () => {
     const response = await request(app()).get("/api/jobs?source=http://127.0.0.1");
+    expect(response.status).toBe(400); expect(feed.get).not.toHaveBeenCalled();
+  });
+  it("still rejects caller-provided routing parameters instead of weakening the feed boundary", async () => {
+    const response = await request(app()).get("/api/jobs?path=jobs");
     expect(response.status).toBe(400); expect(feed.get).not.toHaveBeenCalled();
   });
   it("does not cache all-source failure as live results", async () => {

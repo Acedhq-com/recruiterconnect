@@ -172,6 +172,7 @@
 .career-job-detail > .button { margin-top: var(--space-4); }
 .career-muted { color: var(--color-muted); font-size: var(--text-xs); line-height: 1.6; }
 .career-job-detail > .career-muted { margin-top: var(--space-2); }
+.career-job-detail > label { display: grid; gap: var(--space-2); margin-top: var(--space-4); color: var(--color-muted); }
 .career-evidence { margin: var(--space-5) 0; }
 .career-evidence > div, .career-privacy-panel dl > div { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: var(--space-4); border-top: 1px solid var(--color-border); padding-block: var(--space-3); }
 .career-evidence dt, .career-privacy-panel dt { color: var(--color-muted); }

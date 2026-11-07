@@ -45,9 +45,11 @@ python -m scripts.run_ci
 
 The root `vercel.json` builds `dist/public` with Vite and serves Express API routes from `api/index.ts`. `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are server runtime variables; no service-role key is used or needed. The 30-second function cap permits the adapter's bounded 12-second employer checks to finish. The public job response sets its own CDN cache header; all account, career, pilot, error, and unknown API responses remain non-cacheable.
 
+The exact `/api/jobs` rewrite must precede the wildcard API rewrite. Vercel passes named rewrite captures through the query string, so the wildcard otherwise adds `path=jobs` and trips the intentional no-custom-query feed guard ([Vercel configuration documentation](https://vercel.com/docs/project-configuration/vercel-json)). Keep the guard intact; the two deployment-boundary regression cases assert exact-route precedence and continued rejection of caller-supplied `path`.
+
 Keep `ALLOW_PREVIEW_PROXY` unset on Vercel. It is only for the private Computer preview backend and allows the opaque preview origin; production form requests require the site's own origin.
 
-The linked Vercel project is `recruiterconnect` in workspace `aced2`; no other project is modified. The initial CLI link reported that automatic GitHub integration did not connect, so do not assume a Git push redeploys this app until that integration is authorized. A direct CLI deployment remains supported.
+The linked Vercel project is `recruiterconnect` in workspace `aced2`; no other project is modified. Although the initial CLI link did not connect GitHub, the integration later produced feature previews and a production deployment after a remote merge. Treat Git pushes and merges as deployment-capable actions. Obtain release approval before another push/merge or direct production deployment; do not rely on the earlier disconnected state.
 
 ## Database and operations
 
