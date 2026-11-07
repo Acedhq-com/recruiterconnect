@@ -25,6 +25,7 @@
     "@vitest/coverage-v8": "4.1.12",
     "esbuild": "0.28.2",
     "fast-check": "4.10.2",
+    "happy-dom": "21.0.4",
     "supertest": "7.3.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3",

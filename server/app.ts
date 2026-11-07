@@ -6,6 +6,14 @@ import { registerCareerRoutes } from "./career-routes.js";
 
 export const app = express();
 app.disable("x-powered-by");
+app.use((_request, response, next) => {
+  response.set({
+    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+  });
+  next();
+});
 app.use("/api/career", express.json({ limit: "224kb", strict: true }));
 app.use(express.json({ limit: "12kb", strict: true }));
 registerAccountRoutes(app);
