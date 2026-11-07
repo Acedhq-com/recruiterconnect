@@ -6,6 +6,7 @@ dependencies = []
 
 [dependency-groups]
 test = [
+  "psycopg[binary]==3.3.8",
   "pytest",
   "pytest-cov",
   "hypothesis",

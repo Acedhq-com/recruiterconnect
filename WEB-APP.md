@@ -57,6 +57,19 @@ The Supabase project is separate from other products. It contains private pilot 
 
 Career reads require the owner's active, verified candidate session under database RLS. Writes use fixed authenticated-only RPCs deriving the owner from `auth.uid()`, not a body/header owner claim. Stale browser identity headers are an additional consistency check, not authority. Optimistic versions prevent stale overwrites; pilot limits are 300 job workflows and 30 document drafts per account.
 
+The forward-only audit-hardening migration is a separate release artifact, not
+automatically applied by the app. It rechecks authority after career lock waits,
+holds user/session/account row locks through private mutations, and tightens SQL
+admission against shared validation fixtures. Refresh-only logout resolves and
+revokes the provider session or honestly reports incomplete revocation; it always
+clears browser cookies. Express and static responses explicitly deny framing.
+
+Run `python -m scripts.run_database_tests` only against a new disposable local
+`*_audit` database. The separate database-security CI job applies all migrations,
+runs the existing SQL assertions and lifecycle/validation regressions, and verifies
+fixture cleanup. This is synthetic-auth SQL evidence, not SMTP, signed-JWT or
+hosted-provider validation; see `audit/README.md` before any hosted migration.
+
 `AUTH_EMAIL_READY` must stay unset or `0` until the sending subdomain is verified, Supabase SMTP and numeric-code templates are configured, and an authorized real sign-in email is tested. Never disable email confirmation to make the UI appear finished. Account cookies remain first-party, Secure/HttpOnly in production; tokens are not returned in JSON or browser storage.
 
 The owner-only SQL assertions in `supabase/tests/career_workspace.sql` run as authenticated/anonymous database roles with synthetic sessions inside a rollback-only transaction. They cover overlapping IDs across users, revocation, role boundaries, versions, literal text, deletion status, and anonymous denial. They do not prove SMTP delivery or a real browser Auth-provider round trip.

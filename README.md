@@ -8,6 +8,27 @@ The earlier recruiter directory, shortlists, company-control simulation, and pil
 
 See `WEB-APP.md` for setup, deployment, and security boundaries, `FLOWS.md` for browser acceptance coverage, and `REVENUE-PLAN.md` for the proposed path to a paid pilot. `npm run dev` starts the web app; the existing cross-language contract tests are still part of the complete verification runner.
 
+## Audit hardening and database checks
+
+The audit follow-up fixes private-write authority races, refresh-only logout
+revocation reporting, and API/SQL storage-admission drift. It includes explicit
+anti-framing headers, locked DOM/database test dependencies, and a separate
+PostgreSQL security workflow. See `audit/README.md` for the regression inventory,
+the forward-only migration, local safety restrictions and remaining release gates.
+
+Run both independent verification paths before sensitive changes:
+
+```sh
+python -m scripts.run_ci
+# Fresh disposable local PostgreSQL only; never an existing/hosted database.
+createdb recruiterconnect_audit
+AUDIT_DATABASE_URL='dbname=recruiterconnect_audit' python -m scripts.run_database_tests
+```
+
+The database fixture validates repository SQL using synthetic claims, not hosted
+Supabase Auth or real recruiter discovery. No deployment, hosted migration, email
+activation, or branch-protection setting is changed by running local checks.
+
 ## Original contract suite
 
 Runnable Python and TypeScript contract tests for candidate-controlled recruiter discovery. Both languages consume the same hand-authored fixtures and expected decisions. The supplied reference implementations make the suite executable without an application checkout; they are not the previous Supabase implementation and do not validate its SQL, row-level security, or HTTP endpoints.
@@ -42,12 +63,14 @@ python/tests/                    Contract, hierarchy, property, isolation tests
 typescript/src/                 Matching reference evaluator and adapter loader
 typescript/tests/               Matching contract and property tests
 scripts/                        Output parity and CI artifact validation
-.github/workflows/               Runnable reference CI and production template
+.github/workflows/               Reference CI, database security CI, production template
+audit/                          Audit regressions, synthetic auth fixture, mutation probe
+shared/career-validation-cases.json API/SQL storage-admission fixture corpus
 requirements-ci.txt             Pinned Python test dependencies
 package-lock.json               Pinned TypeScript test dependency graph
 ```
 
-The test suite is synchronous by design. An async production evaluator needs an application-specific synchronous wrapper or an async adaptation of the test adapter. No live database, credentials, personal data, network access during tests, or deployment is required.
+The discovery reference suite is synchronous by design. An async production evaluator needs an application-specific synchronous wrapper or an async adaptation of the test adapter. Reference verification needs no live database, credentials, personal data, external service access during tests, or deployment; the separate database job uses only a disposable local fixture.
 
 ## Run locally
 

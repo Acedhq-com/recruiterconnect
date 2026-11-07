@@ -2,6 +2,42 @@
 
 This inventory covers the existing deployed app, now being connected to the owner-purchased FindWorkPrivately.com domain. The discovery-contract fixtures and the existing demo/pilot flows remain release-regression requirements.
 
+## Audit-remediation verification
+
+Preserve the existing design, routes, guest-memory behavior and synthetic recruiter
+boundary. This source-only work does not authorize deployment, hosted migrations,
+email-code activation, branch-rule changes, or real discovery.
+
+- Recheck guest job browsing/details, saving, tracker notes, background facts and
+  factual draft generation. Guest work must clear on reload without a private write.
+- Recheck recruiter filtering, profile dialogs, shortlist, saved searches, simulated
+  introductions and privacy controls. Never send a real introduction.
+- Verify privacy, pilot pricing and disabled account states remain truthful. Do
+  not submit signup/pilot forms to external services during browser QA.
+- Check desktop, 375-pixel views, desktop/mobile/desktop resizing and page errors.
+- Confirm refresh-only logout revokes the resolved session or reports incomplete
+  revocation while always clearing browser cookies.
+- Run original discovery/parity/coverage gates and every added regression.
+- Use only a fresh disposable local PostgreSQL database for migrations, existing
+  SQL scripts, lifecycle races, schema fixtures and privilege controls.
+- Reject writes when revocation commits before authority is locked; otherwise
+  serialize lifecycle changes until the authorized write transaction completes.
+- Confirm anti-framing in both Express and static deployment configuration.
+
+### Audit follow-up checkpoint
+
+- The owner explicitly requested pushing the improvements to `recruiterconnect`.
+  Use a review branch and PR; this is not approval to merge, deploy, apply hosted
+  migrations, change branch security settings, activate mail or enable discovery.
+- Local gates pass 375 Python tests, 632 TypeScript tests, 117 PostgreSQL tests and
+  all 132 shared discovery decisions. The original audit's nine red assertions
+  are now mandatory passing regressions.
+- Rechecked all 11 routes at desktop and 375px, with no page errors or horizontal
+  overflow. Guest workflows, three factual draft types, local downloads,
+  synthetic recruiter controls, consent and disabled sign-in behaved as before.
+- No browser POST, local-storage or session-storage writes occurred; hard reload
+  cleared guest facts. The deterministic feed fixture existed only in browser QA.
+
 ## Combined career workspace acceptance
 
 - The default home is the candidate's job-search workspace, with real employer feeds, the existing tracker filters, saved applications, a factual application-material studio, background facts, and account settings.
@@ -32,7 +68,7 @@ This inventory covers the existing deployed app, now being connected to the owne
 - `AUTH_EMAIL_READY` remains unset or false. The next release gate is a verified sending subdomain, configured Supabase SMTP, numeric-code email templates, and an authorized real-code sign-in test. The connected email actions do not manage domains or SMTP settings, so dashboard access or an explicitly authorized secure credential setup is still required.
 - No billing, paid upgrade, additional purchase, automatic redeployment, or real candidate discovery has been enabled. Preserve these gates when resuming.
 
-## Combined workspace verification checkpoint
+## Combined workspace verification checkpoint (historical, before the audit)
 
 - The complete local verification runner passes 332 Python tests, 505 TypeScript tests, and all 132 expected cross-language decisions, including the two new Vercel-routing boundary regressions. Type checking, production build, report freshness, no-skips assertions, and reference-engine coverage gates are green. Reference coverage does not certify production recruiter authorization or email delivery.
 - The additive career migration is applied to the existing project. Actual provider SQL assertions passed for owner isolation with overlapping job/document IDs, literal text, active sessions, role restrictions, optimistic versions, revocation, deletion status, and anonymous denial. Synthetic SQL users, sessions, and rows were rolled back; pilot leads, accounts, profiles, backgrounds, workflows, and documents each remained at zero.
@@ -40,7 +76,7 @@ This inventory covers the existing deployed app, now being connected to the owne
 - Desktop, 375px mobile, desktop/mobile/desktop resizing, and a short desktop window were inspected without horizontal overflow or new page errors. Rendered career labels passed measured text-contrast checks; native checkboxes are UI controls, not text-contrast samples.
 - A sandbox navigation to one employer board was blocked. Job details therefore expose a selectable, read-only posting URL as well as the outbound link. Feed failure clears the displayed result count rather than suggesting cached rows can be viewed.
 - GitHub recorded PR #1 merged under the owner account at 2026-11-07 05:36 UTC, and the owner subsequently confirmed, “I merged the latest.” This explains the concurrent release; it was not an unexplained automatic merge. Vercel inspection confirmed production deployment `dpl_3KYK3kKNcmSwHAsza5FfwBpoH8s9` Ready on the existing domain. Do not infer approval for the separate follow-up fix from the earlier merge.
-- A fresh custom-domain check confirmed the combined UI and `authEnabled: false`, but `/api/jobs` returned 400 because the wildcard rewrite injects a query parameter. The local follow-up puts an exact public-feed rewrite first and preserves the strict query guard. The regression-tested fix is pending publication approval; no further Git pushes or production deployment commands should run before it.
+- At that checkpoint, a fresh custom-domain check confirmed the combined UI and `authEnabled: false`, but `/api/jobs` returned 400 because the wildcard rewrite injected a query parameter. The follow-up exact public-feed rewrite preserved the strict query guard and was pending separate publication approval at that time. Those historical approvals do not authorize later merges or production deployment.
 - Hosted-preview checks confirmed all 13 filters, real feed loading, employer navigation plus a selectable URL fallback, three factual material types, TXT/Markdown and formula-safe CSV downloads, draft edit/reopen, removal/cancellation, canonical account handoff, and zero guest private-write requests. All six career screens passed measured text-contrast checks; mobile resizing/menu state passed with no horizontal overflow or page errors.
 - The separate job tracker, personal resumes/tracker data, ACED, billing settings, and the email launch gate remain unchanged by this task.
 

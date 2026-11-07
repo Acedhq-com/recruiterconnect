@@ -25,8 +25,8 @@ def main() -> None:
     )
     commands = [
         [python, "-m", "scripts.validate_ci_reports", "--start"],
-        [python, "-m", "ruff", "check", "python", "scripts"],
-        [python, "-m", "ruff", "format", "--check", "python", "scripts"],
+        [python, "-m", "ruff", "check", "python", "scripts", "audit"],
+        [python, "-m", "ruff", "format", "--check", "python", "scripts", "audit"],
         [python, "-m", "pytest", *pytest_options],
         [npm, "run", "typecheck"],
         [npm, "run", "build"],

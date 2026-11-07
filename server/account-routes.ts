@@ -117,7 +117,21 @@ export function registerAccountRoutes(app: Express, service: IAccountService = a
     if (!input.success) throw new AccountError(400, "Invalid sign-out request.");
     const cookies = readCookies(request);
     writeCookies(response, null);
-    const revoked = cookies.access ? await service.logout(cookies.access).catch(() => false) : true;
+    let revoked = !cookies.access && !cookies.refresh;
+    try {
+      let accessToken = cookies.access;
+      // Clearing cookies is not provider revocation. A refresh-only session
+      // still needs resolving and revoking, without writing rotated cookies.
+      if (!accessToken && cookies.refresh) {
+        const session = await service.resolve(cookies.access, cookies.refresh);
+        accessToken = session?.tokens.accessToken;
+      }
+      if (accessToken) revoked = await service.logout(accessToken);
+    } catch {
+      // Browser logout remains available when the provider is unavailable,
+      // but the response must not claim the remote session was revoked.
+      revoked = false;
+    }
     response.json({ signedOut: true, revocationComplete: revoked });
   }, true));
   app.post("/api/account/onboard", route(async (request, response) => {
