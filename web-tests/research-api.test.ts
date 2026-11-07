@@ -38,8 +38,8 @@ beforeEach(() => {
     enabled: vi.fn(() => true), start: vi.fn(), verify: vi.fn(), resolve: vi.fn(async () => verified),
     logout: vi.fn(), records: vi.fn(async (): Promise<AccountRecords> => ({
       account: { user_id: userA, account_kind: "candidate", display_name: "Synthetic Account",
-        status: "active", deletion_requested_at: null }, profile: null, privacy: null,
-    })), onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
+        status: "active", deletion_requested_at: null }, profile: null, privacy: null, recruiter: null, discovery: null,
+    })), onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(), saveRecruiterFirm: vi.fn(), addClient: vi.fn(), removeClient: vi.fn(), submitRecruiter: vi.fn(), setDiscovery: vi.fn(), search: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn(),
   };
   storage = { read: vi.fn(), saveBackground: vi.fn(), saveWorkflow: vi.fn(), saveDocument: vi.fn(), removeDocument: vi.fn() };
   research = { allowed: vi.fn(() => true), search: vi.fn(async () => result) };
@@ -98,7 +98,7 @@ describe("owner-bound candidate research API", () => {
       account: mode === "unonboarded" ? null : { user_id: userA, display_name: "Synthetic",
         account_kind: mode === "recruiter" ? "recruiter" : "candidate",
         status: mode === "suspended" || mode === "deletion_requested" ? mode : "active",
-        deletion_requested_at: null }, profile: null, privacy: null,
+        deletion_requested_at: null }, profile: null, privacy: null, recruiter: null, discovery: null,
     });
     expect((await post()).status).toBe(403);
     expect(research.search).not.toHaveBeenCalled();

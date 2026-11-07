@@ -1,9 +1,10 @@
 import type { Express, Request, Response } from "express";
 import { parse, serialize } from "cookie";
 import {
-  PUBLIC_APP_ORIGIN, addBlockSchema, deletionRequestSchema, emptyAccountActionSchema,
-  onboardAccountSchema, removeBlockSchema, saveEmployerSchema, savePrivateProfileSchema,
-  startEmailSchema, verifyEmailSchema,
+  PUBLIC_APP_ORIGIN, SEARCH_PAGE_SIZE, addBlockSchema, addClientSchema, deletionRequestSchema,
+  emptyAccountActionSchema, onboardAccountSchema, removeBlockSchema, removeClientSchema,
+  saveEmployerSchema, savePrivateProfileSchema, saveRecruiterFirmSchema, searchRequestSchema,
+  setDiscoverySchema, startEmailSchema, verifyEmailSchema,
 } from "../shared/account-schema.js";
 import type { PublicAccountSession } from "../shared/account-schema.js";
 import { AccountError, accountService } from "./account-service.js";
@@ -70,7 +71,8 @@ export function registerAccountRoutes(app: Express, service: IAccountService = a
   const current = (request: Request, response: Response, required = true) =>
     resolveAccountSession(request, response, service, required);
   async function envelope(session: VerifiedSession | null): Promise<PublicAccountSession> {
-    const records = session ? await service.records(session) : { account: null, profile: null, privacy: null };
+    const records = session ? await service.records(session)
+      : { account: null, profile: null, privacy: null, recruiter: null, discovery: null };
     if (session && records.account && records.account.user_id !== session.user.id) {
       throw new AccountError(503, "Account ownership could not be verified.");
     }
@@ -174,6 +176,55 @@ export function registerAccountRoutes(app: Express, service: IAccountService = a
     const session = (await current(request, response))!;
     await service.removeBlock(session, input.data.id);
     response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/recruiter", route(async (request, response) => {
+    requireEnabled();
+    const input = saveRecruiterFirmSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Enter your firm name (2 to 150 characters) and, if you add a link, a full https:// address.");
+    const session = (await current(request, response))!;
+    await service.saveRecruiterFirm(session, input.data);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/recruiter/clients", route(async (request, response) => {
+    requireEnabled();
+    const input = addClientSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Enter a company name (2 to 150 characters).");
+    const session = (await current(request, response))!;
+    await service.addClient(session, input.data.company);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/recruiter/clients/remove", route(async (request, response) => {
+    requireEnabled();
+    const input = removeClientSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Choose a company to remove.");
+    const session = (await current(request, response))!;
+    await service.removeClient(session, input.data.id);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/recruiter/submit", route(async (request, response) => {
+    requireEnabled();
+    if (!emptyAccountActionSchema.safeParse(request.body).success) throw new AccountError(400, "Invalid submission.");
+    const session = (await current(request, response))!;
+    await service.submitRecruiter(session);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/account/discovery", route(async (request, response) => {
+    requireEnabled();
+    const input = setDiscoverySchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Confirm the current consent text to become discoverable.");
+    const session = (await current(request, response))!;
+    await service.setDiscovery(session, input.data);
+    response.json(await envelope(session));
+  }, true));
+  app.post("/api/recruiter/search", route(async (request, response) => {
+    requireEnabled();
+    const input = searchRequestSchema.safeParse(request.body);
+    if (!input.success) throw new AccountError(400, "Check the search words (80 characters at most) and try again.");
+    const session = (await current(request, response))!;
+    const results = await service.search(session, input.data);
+    const offset = input.data.offset ?? 0;
+    response.json({ results, nextOffset: results.length === SEARCH_PAGE_SIZE && offset + SEARCH_PAGE_SIZE <= 100
+      ? offset + SEARCH_PAGE_SIZE : null });
   }, true));
   app.post("/api/account/deletion-request", route(async (request, response) => {
     requireEnabled();

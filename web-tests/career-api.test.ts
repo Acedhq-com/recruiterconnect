@@ -43,8 +43,8 @@ beforeEach(() => {
   vi.stubEnv("APP_ORIGIN", "https://findworkprivately.com");
   accounts = { enabled: vi.fn(() => true), start: vi.fn(), verify: vi.fn(), resolve: vi.fn(async () => session),
     logout: vi.fn(), records: vi.fn(async (): Promise<AccountRecords> => ({ account: { user_id: uid, account_kind: "candidate",
-      display_name: "QA Person", status: "active", deletion_requested_at: null }, profile: null, privacy: null })),
-    onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn() };
+      display_name: "QA Person", status: "active", deletion_requested_at: null }, profile: null, privacy: null, recruiter: null, discovery: null })),
+    onboard: vi.fn(), saveProfile: vi.fn(), saveEmployer: vi.fn(), addBlock: vi.fn(), removeBlock: vi.fn(), saveRecruiterFirm: vi.fn(), addClient: vi.fn(), removeClient: vi.fn(), submitRecruiter: vi.fn(), setDiscovery: vi.fn(), search: vi.fn(), requestDeletion: vi.fn(), cancelDeletion: vi.fn() };
   storage = { read: vi.fn(async () => emptyWorkspace()), saveBackground: vi.fn(), saveWorkflow: vi.fn(),
     saveDocument: vi.fn(), removeDocument: vi.fn() };
   feed = { get: vi.fn(async () => feedResult) };
@@ -125,7 +125,7 @@ describe("private career API authorization and consistency", () => {
       user_id: uid, account_kind: value === "recruiter" ? "recruiter" : "candidate",
       display_name: "QA", status: value === "suspended" || value === "deletion_requested" ? value : "active",
       deletion_requested_at: null,
-    }, profile: null, privacy: null });
+    }, profile: null, privacy: null, recruiter: null, discovery: null });
     return post("/api/career/workflow", workflow).then(response => {
       expect(response.status).toBe(403); expect(storage.saveWorkflow).not.toHaveBeenCalled();
     });
@@ -134,7 +134,7 @@ describe("private career API authorization and consistency", () => {
     vi.mocked(accounts.records).mockResolvedValue({ account: {
       user_id: "22222222-2222-4222-8222-222222222222", account_kind: "candidate",
       display_name: "Foreign", status: "active", deletion_requested_at: null,
-    }, profile: null, privacy: null });
+    }, profile: null, privacy: null, recruiter: null, discovery: null });
     expect((await post("/api/career/workflow", workflow)).status).toBe(503);
     expect(storage.saveWorkflow).not.toHaveBeenCalled();
   });

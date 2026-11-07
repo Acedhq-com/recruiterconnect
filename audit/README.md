@@ -117,13 +117,23 @@ Global pilot quotas are still not a full per-client anti-bot control. Fleet-wide
 feed refresh coordination and privacy-minimal throttling remain separate
 operational work, not claims made by these fixes.
 
-## Remaining production discovery tests
+## Discovery tests
 
-No production candidate-discovery endpoint or SQL function exists in this
-repository. Do not fabricate passing integration tests for an absent boundary.
-Before introducing real candidate records, implement production-target tests for
-JWT-to-authority loading, every list/detail/export/count path, filter-before-
-pagination/count semantics, cache isolation/invalidation, concurrent revoke/pause,
-RLS against a real Supabase stack, and public denial-response non-enumerability.
+Phase 2 added a production discovery boundary: `search_candidates` and the
+consent, verification and block rules around it. `audit/test_database.py`
+covers it against a fresh PostgreSQL 18 database with synthetic sessions
+(`test_phase2_*`): block matching including aliases and word boundaries,
+fail-closed recruiter and candidate states, consent version, operator review,
+immediate hiding on deletion/suspension/ban, owner-only reads, denied direct
+writes, exact function-grant allowlists, rate limiting, and cleanup. A hand
+mutation check (dropping the block filter, the review check, the prefix rule,
+the verified check, the hide-on-inactive trigger, and the text guard) fails the
+suite each time.
+
+Still to do before real candidate records are used at scale: tests against a
+real Supabase stack with signed JWTs, cache isolation and invalidation if any
+search response is ever cached (none is today; every response is
+`private, no-store`), concurrent revoke/pause tests, and a load check of
+`fwp_private.candidate_blockers` beyond pilot size (it runs per candidate).
 The synchronous pure-policy adapters should not stand in for an async network
 boundary suite.

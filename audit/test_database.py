@@ -729,3 +729,794 @@ def test_phase1_deletion_requested_accounts_cannot_change_protections(actor):
     ):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             run_as(actor, statement)
+
+
+# --- Phase 2: recruiter verification, consented discovery and anonymous search ---
+
+CONSENT = "discovery-v1"
+SEARCH = (
+    "select handle, headline, skills, work_preference from public.search_candidates(%s, %s, %s, %s)"
+)
+
+
+def email_of(person):
+    return f"{person[0]}@example.com"
+
+
+def admin(sql, params=()):
+    with connect("audit-operator") as conn:
+        cursor = conn.execute(sql, params)
+        return cursor.fetchall() if cursor.description else None
+
+
+def search(person, query=None, preference=None, limit=20, offset=0):
+    return run_as(person, SEARCH, (query, preference, limit, offset))
+
+
+def handle_of(person):
+    return run_as(person, "select handle from public.candidate_discovery")[0][0]
+
+
+def visible_handles(person, **kwargs):
+    return {row[0] for row in search(person, **kwargs)}
+
+
+@pytest.fixture
+def people():
+    created = []
+
+    def candidate(
+        headline="Senior accountant",
+        skills=("US GAAP", "Excel"),
+        employer="Alpha Audit LLP",
+        blocks=(),
+        preference="Remote",
+        enable=True,
+        approve=True,
+    ):
+        person = make_actor("candidate")
+        created.append(person[0])
+        run_as(
+            person,
+            "select public.save_my_private_profile('Synthetic person', %s, %s, %s, 1)",
+            (headline, list(skills), preference),
+        )
+        if employer:
+            run_as(person, "select public.save_my_current_employer(%s)", (employer,))
+        for name in blocks:
+            run_as(person, "select public.add_my_block(%s)", (name,))
+        if enable:
+            run_as(person, "select public.set_my_discovery(true, %s)", (CONSENT,))
+            if approve:
+                admin(
+                    "select fwp_private.admin_set_candidate_review(%s, 'approved', 'test')",
+                    (email_of(person),),
+                )
+        return person
+
+    def recruiter(
+        firm="Zenith Search Partners",
+        clients=("Orion Corp",),
+        proof="https://example.com/zenith",
+        verify=True,
+    ):
+        person = make_actor("recruiter")
+        created.append(person[0])
+        run_as(person, "select public.save_my_recruiter_firm(%s, %s)", (firm, proof))
+        for name in clients:
+            run_as(person, "select public.add_my_client(%s)", (name,))
+        if verify:
+            run_as(person, "select public.submit_my_recruiter_profile()")
+            admin(
+                "select fwp_private.admin_set_recruiter_status(%s, 'verified', 'test')",
+                (email_of(person),),
+            )
+        return person
+
+    yield type(
+        "People", (), {"candidate": staticmethod(candidate), "recruiter": staticmethod(recruiter)}
+    )
+    with connect() as conn:
+        for user_id in created:
+            conn.execute("delete from auth.users where id = %s", (user_id,))
+
+
+def test_phase2_a_verified_recruiter_sees_an_approved_candidate_anonymously(people):
+    candidate = people.candidate(skills=("US GAAP", "Excel"), preference="Hybrid")
+    recruiter = people.recruiter()
+    rows = search(recruiter)
+    assert rows == [(handle_of(candidate), "Senior accountant", ["US GAAP", "Excel"], "Hybrid")]
+    assert rows[0][0].startswith("RC-") and len(rows[0][0]) == 15
+
+
+def test_phase2_results_have_four_columns_and_leak_nothing_private(people):
+    candidate = people.candidate(employer="Secret Employer LLC", blocks=("Hidden Past Firm",))
+    recruiter = people.recruiter()
+    with connect() as conn, actor_transaction(conn, recruiter):
+        cursor = conn.execute(SEARCH, (None, None, 20, 0))
+        assert [c.name for c in cursor.description] == [
+            "handle",
+            "headline",
+            "skills",
+            "work_preference",
+        ]
+        text = json.dumps(cursor.fetchall()).lower()
+    for secret in (
+        "secret employer",
+        "hidden past firm",
+        "synthetic person",
+        email_of(candidate),
+        candidate[0],
+        candidate[1],
+    ):
+        assert secret.lower() not in text
+
+
+@pytest.mark.parametrize(
+    "blocked,firm,clients,hidden",
+    [
+        ("Orion Corp", "Zenith Partners", ("Orion Corporation",), True),
+        ("Orion", "Zenith Partners", ("Orion Search Group",), True),
+        ("Orion Search Group", "Zenith Partners", ("Orion",), True),
+        ("Orion", "Orion Search Partners", ("Delta Bank",), True),
+        ("Delta", "Zenith Partners", ("Delta Dental",), True),
+        ("Orionic", "Zenith Partners", ("Orion",), False),
+        ("Orion", "Zenith Partners", ("Orionic Labs",), False),
+        ("Gamma", "Zenith Partners", ("Orion", "Delta Bank"), False),
+        ("Smith & Jones LLP", "Zenith Partners", ("Smith and Jones",), True),
+        ("ey", "Zenith Partners", ("Ernst & Young",), False),
+    ],
+)
+def test_phase2_blocked_companies_never_see_the_candidate(people, blocked, firm, clients, hidden):
+    candidate = people.candidate(blocks=(blocked,))
+    recruiter = people.recruiter(firm=firm, clients=clients)
+    assert (handle_of(candidate) not in visible_handles(recruiter)) is hidden
+
+
+def test_phase2_the_current_employer_is_always_excluded(people):
+    candidate = people.candidate(employer="Beta Holdings, Inc.")
+    assert handle_of(candidate) not in visible_handles(people.recruiter(clients=("Beta Holdings",)))
+    assert handle_of(candidate) in visible_handles(people.recruiter(clients=("Other Corp",)))
+
+
+def test_phase2_aliases_extend_matching_and_can_be_removed(people):
+    candidate = people.candidate(blocks=("Ernst & Young",))
+    recruiter = people.recruiter(clients=("EY",))
+    assert handle_of(candidate) in visible_handles(recruiter)
+    admin("select fwp_private.admin_add_alias('EY', 'Ernst & Young')")
+    try:
+        assert handle_of(candidate) not in visible_handles(recruiter)
+    finally:
+        admin("select fwp_private.admin_remove_alias('ey')")
+    assert handle_of(candidate) in visible_handles(recruiter)
+
+
+def test_phase2_alias_chains_are_refused():
+    try:
+        admin("select fwp_private.admin_add_alias('Foo Bar', 'Foo Holdings')")
+        with pytest.raises(psycopg.errors.Error):
+            admin("select fwp_private.admin_add_alias('Foo Holdings', 'Elsewhere')")
+        with pytest.raises(psycopg.errors.Error):
+            admin("select fwp_private.admin_add_alias('Baz', 'Foo Bar')")
+        with pytest.raises(psycopg.errors.Error):
+            admin("select fwp_private.admin_add_alias('Same Name Inc', 'Same Name LLC')")
+    finally:
+        admin("delete from fwp_private.company_aliases")
+
+
+@pytest.mark.parametrize(
+    "a,b,expected",
+    [
+        ("acme", "acme", True),
+        ("acme", "acme holdings", True),
+        ("acme holdings", "acme", True),
+        ("acme", "acmeron", False),
+        ("acme corp", "acme inc", False),
+        ("a b", "a b c", True),
+        ("x", "x", True),
+        (None, "acme", True),
+    ],
+)
+def test_phase2_key_conflict_rule(a, b, expected):
+    assert admin("select fwp_private.canonical_keys_conflict(%s, %s)", (a, b)) == [(expected,)]
+
+
+def test_phase2_blocks_take_effect_on_the_next_search_and_can_be_lifted(people):
+    candidate = people.candidate()
+    recruiter = people.recruiter(clients=("Orion Corp",))
+    assert handle_of(candidate) in visible_handles(recruiter)
+    run_as(candidate, "select public.add_my_block('Orion Corporation')")
+    assert handle_of(candidate) not in visible_handles(recruiter)
+    block = run_as(candidate, "select id from public.candidate_blocks where source = 'candidate'")
+    run_as(candidate, "select public.remove_my_block(%s)", (block[0][0],))
+    assert handle_of(candidate) in visible_handles(recruiter)
+
+
+@pytest.mark.parametrize("state", ["draft", "pending", "rejected", "suspended"])
+def test_phase2_unverified_recruiters_get_nothing(people, state):
+    people.candidate()
+    recruiter = people.recruiter(verify=False)
+    email = email_of(recruiter)
+    if state != "draft":
+        run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    if state in ("rejected", "suspended"):
+        admin("select fwp_private.admin_set_recruiter_status(%s, %s)", (email, state))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        search(recruiter)
+
+
+def test_phase2_a_verified_recruiter_with_no_hires_for_list_is_refused(people):
+    people.candidate()
+    recruiter = people.recruiter()
+    assert search(recruiter)
+    admin("delete from public.recruiter_clients where user_id = %s", (recruiter[0],))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        search(recruiter)
+
+
+def test_phase2_changing_a_verified_profile_withdraws_verification(people):
+    candidate = people.candidate()
+    recruiter = people.recruiter()
+    status = "select status from public.recruiter_profiles"
+    assert run_as(recruiter, status) == [("verified",)]
+    run_as(recruiter, "select public.add_my_client('Gamma Group')")
+    assert run_as(recruiter, status) == [("draft",)]
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        search(recruiter)
+    # Unchanged saves do not withdraw anything.
+    run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    admin("select fwp_private.admin_set_recruiter_status(%s, 'verified')", (email_of(recruiter),))
+    run_as(
+        recruiter,
+        "select public.save_my_recruiter_firm('ZENITH Search Partners', 'https://example.com/zenith')",
+    )
+    run_as(recruiter, "select public.add_my_client('gamma group')")
+    assert run_as(recruiter, status) == [("verified",)]
+    assert handle_of(candidate) in visible_handles(recruiter)
+    run_as(
+        recruiter,
+        "select public.save_my_recruiter_firm('Zenith Search Partners', 'https://example.com/other')",
+    )
+    assert run_as(recruiter, status) == [("draft",)]
+    clients = run_as(recruiter, "select id from public.recruiter_clients limit 1")
+    admin(
+        "update public.recruiter_profiles set status = 'verified' where user_id = %s",
+        (recruiter[0],),
+    )
+    run_as(recruiter, "select public.remove_my_client(%s)", (clients[0][0],))
+    assert run_as(recruiter, status) == [("draft",)]
+
+
+def test_phase2_a_recruiter_cannot_verify_themselves(people):
+    recruiter = people.recruiter(verify=False)
+    for statement in (
+        "update public.recruiter_profiles set status = 'verified'",
+        "delete from public.recruiter_profiles",
+        "insert into public.recruiter_clients(user_id, company_name, company_key) "
+        "values (gen_random_uuid(), 'X Y', 'x y')",
+        "select fwp_private.admin_set_recruiter_status('a@b.c', 'verified')",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(recruiter, statement)
+    run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        search(recruiter)
+
+
+def test_phase2_submission_needs_a_link_and_a_hires_for_list_and_rejection_needs_edits(people):
+    recruiter = people.recruiter(verify=False, clients=(), proof=None)
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    run_as(
+        recruiter,
+        "select public.save_my_recruiter_firm('Zenith Search Partners', 'https://example.com/z')",
+    )
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    run_as(recruiter, "select public.add_my_client('Orion Corp')")
+    run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    admin(
+        "select fwp_private.admin_set_recruiter_status(%s, 'rejected', 'no')",
+        (email_of(recruiter),),
+    )
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):
+        run_as(recruiter, "select public.submit_my_recruiter_profile()")
+
+
+def test_phase2_suspended_recruiters_cannot_edit_or_search_until_reinstated(people):
+    people.candidate()
+    recruiter = people.recruiter()
+    email = email_of(recruiter)
+    admin("select fwp_private.admin_set_recruiter_status(%s, 'suspended', 'abuse')", (email,))
+    for statement in (
+        "select public.add_my_client('Another Company')",
+        "select public.save_my_recruiter_firm('Zenith Search Partners', 'https://example.com/zenith')",
+        "select public.submit_my_recruiter_profile()",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(recruiter, statement)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        search(recruiter)
+    admin("select fwp_private.admin_set_recruiter_status(%s, 'pending')", (email,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        search(recruiter)
+    admin("select fwp_private.admin_set_recruiter_status(%s, 'verified')", (email,))
+    assert search(recruiter)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "x", "a" * 151, "bad\nname", "!!"],
+)
+def test_phase2_invalid_recruiter_inputs_are_rejected(people, value):
+    recruiter = people.recruiter(verify=False, clients=())
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(recruiter, "select public.save_my_recruiter_firm(%s, null)", (value,))
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(recruiter, "select public.add_my_client(%s)", (value,))
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com/a",
+        "https://exa mple.com",
+        "javascript:alert(1)",
+        "https://x",
+        "https://" + "a" * 300,
+    ],
+)
+def test_phase2_proof_links_must_be_https(people, url):
+    recruiter = people.recruiter(verify=False, clients=(), proof=None)
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(recruiter, "select public.save_my_recruiter_firm('Zenith Partners', %s)", (url,))
+
+
+def test_phase2_hires_for_list_is_capped_and_needs_a_firm_first(people):
+    recruiter = make_actor("recruiter")
+    try:
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            run_as(recruiter, "select public.add_my_client('Orion Corp')")
+        run_as(recruiter, "select public.save_my_recruiter_firm('Zenith Partners', null)")
+        for n in range(30):
+            run_as(recruiter, "select public.add_my_client(%s)", (f"Client {n} Inc",))
+        run_as(recruiter, "select public.add_my_client('client 3 llc')")
+        with pytest.raises(psycopg.errors.ProgramLimitExceeded):
+            run_as(recruiter, "select public.add_my_client('One Too Many')")
+    finally:
+        admin("delete from auth.users where id = %s", (recruiter[0],))
+
+
+def test_phase2_candidates_must_consent_with_the_current_version_and_finish_their_draft(people):
+    candidate = people.candidate(enable=False)
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(candidate, "select public.set_my_discovery(true, 'discovery-v0')")
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(candidate, "select public.set_my_discovery(true, null)")
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(candidate, "select public.set_my_discovery(null, %s)", (CONSENT,))
+    no_headline = make_actor("candidate")
+    no_employer = make_actor("candidate")
+    mentions = make_actor("candidate")
+    try:
+        run_as(
+            no_employer,
+            "select public.save_my_private_profile('X Person', 'Accountant', array['GAAP'], 'Remote', 1)",
+        )
+        run_as(
+            mentions,
+            "select public.save_my_private_profile('X Person', 'Auditor at Acme Inc', array['GAAP'], 'Remote', 1)",
+        )
+        run_as(mentions, "select public.save_my_current_employer('Acme, Inc.')")
+        run_as(no_headline, "select public.save_my_current_employer('Acme, Inc.')")
+        for person in (no_headline, no_employer, mentions):
+            with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):
+                run_as(person, "select public.set_my_discovery(true, %s)", (CONSENT,))
+            assert run_as(person, "select count(*) from public.candidate_discovery") == [(0,)]
+    finally:
+        for person in (no_headline, no_employer, mentions):
+            admin("delete from auth.users where id = %s", (person[0],))
+
+
+def test_phase2_nobody_is_visible_until_the_operator_approves(people):
+    recruiter = people.recruiter()
+    pending = people.candidate(approve=False)
+    assert handle_of(pending) not in visible_handles(recruiter)
+    status = run_as(pending, "select public.my_discovery_status()")[0][0]
+    assert status["enabled"] and not status["visible"] and status["blockers"] == ["awaiting_review"]
+    for review, blocker in (("rejected", "review_rejected"), ("suspended", "review_suspended")):
+        admin("select fwp_private.admin_set_candidate_review(%s, %s)", (email_of(pending), review))
+        assert handle_of(pending) not in visible_handles(recruiter)
+        assert run_as(pending, "select public.my_discovery_status()")[0][0]["blockers"] == [blocker]
+        admin("select fwp_private.admin_set_candidate_review(%s, 'pending')", (email_of(pending),))
+    admin("select fwp_private.admin_set_candidate_review(%s, 'approved')", (email_of(pending),))
+    assert handle_of(pending) in visible_handles(recruiter)
+    assert run_as(pending, "select public.my_discovery_status()")[0][0]["visible"] is True
+
+
+def test_phase2_a_candidate_cannot_approve_themselves_or_unhide_after_rejection(people):
+    candidate = people.candidate(approve=False)
+    for statement in (
+        "update public.candidate_discovery set review_status = 'approved'",
+        "update public.candidate_discovery set enabled = true",
+        "delete from public.candidate_discovery",
+        "update public.account_profiles set discovery_active = true",
+        "select fwp_private.admin_set_candidate_review('a@b.c', 'approved')",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(candidate, statement)
+    admin("select fwp_private.admin_set_candidate_review(%s, 'rejected')", (email_of(candidate),))
+    run_as(candidate, "select public.set_my_discovery(false, null)")
+    run_as(candidate, "select public.set_my_discovery(true, %s)", (CONSENT,))
+    assert run_as(candidate, "select review_status from public.candidate_discovery") == [
+        ("rejected",)
+    ]
+    assert run_as(candidate, "select discovery_active from public.account_profiles") == [(False,)]
+
+
+def test_phase2_turning_discovery_off_hides_the_candidate_immediately(people):
+    candidate = people.candidate()
+    recruiter = people.recruiter()
+    handle = handle_of(candidate)
+    assert handle in visible_handles(recruiter)
+    run_as(candidate, "select public.set_my_discovery(false, null)")
+    assert handle not in visible_handles(recruiter)
+    run_as(candidate, "select public.set_my_discovery(true, %s)", (CONSENT,))
+    assert handle in visible_handles(recruiter)
+    assert handle_of(candidate) == handle
+
+
+def test_phase2_outdated_consent_hides_the_candidate_until_given_again(people):
+    candidate = people.candidate()
+    recruiter = people.recruiter()
+    admin(
+        "update public.candidate_discovery set consent_version = 'discovery-v0' where user_id = %s",
+        (candidate[0],),
+    )
+    assert handle_of(candidate) not in visible_handles(recruiter)
+    assert run_as(candidate, "select public.my_discovery_status()")[0][0]["blockers"] == [
+        "consent_outdated"
+    ]
+    run_as(candidate, "select public.set_my_discovery(true, %s)", (CONSENT,))
+    assert handle_of(candidate) in visible_handles(recruiter)
+
+
+def test_phase2_editing_the_headline_to_name_a_blocked_company_hides_the_candidate(people):
+    candidate = people.candidate(employer="Gamma Group")
+    recruiter = people.recruiter(clients=("Orion Corp",))
+    assert handle_of(candidate) in visible_handles(recruiter)
+    run_as(
+        candidate,
+        "select public.save_my_private_profile('X Person', 'Auditor, ex Gamma Group', array['GAAP'], 'Remote', 2)",
+    )
+    assert handle_of(candidate) not in visible_handles(recruiter)
+    status = run_as(candidate, "select public.my_discovery_status()")[0][0]
+    assert status["blockers"] == ["mentions_blocked_company"] and status["ready"] is False
+    run_as(
+        candidate,
+        "select public.save_my_private_profile('X Person', 'Senior auditor', array['Gamma Group audits'], 'Remote', 3)",
+    )
+    assert handle_of(candidate) not in visible_handles(recruiter)
+    run_as(
+        candidate,
+        "select public.save_my_private_profile('X Person', 'Senior auditor', array['GAAP'], 'Remote', 4)",
+    )
+    assert handle_of(candidate) in visible_handles(recruiter)
+
+
+def test_phase2_deleting_suspending_or_banning_removes_a_candidate_at_once(people):
+    recruiter = people.recruiter()
+    one, two, three = people.candidate(), people.candidate(), people.candidate()
+    handles = [handle_of(p) for p in (one, two, three)]
+    assert set(handles) <= visible_handles(recruiter)
+    run_as(one, "select public.request_my_account_deletion()")
+    admin("update public.member_accounts set status = 'suspended' where user_id = %s", (two[0],))
+    admin(
+        "update auth.users set banned_until = now() + interval '1 day' where id = %s", (three[0],)
+    )
+    assert not set(handles) & visible_handles(recruiter)
+    # Coming back does not silently restore visibility: consent is asked again.
+    run_as(one, "select public.cancel_my_account_deletion()")
+    assert handles[0] not in visible_handles(recruiter)
+    assert run_as(one, "select enabled from public.candidate_discovery") == [(False,)]
+    run_as(one, "select public.set_my_discovery(true, %s)", (CONSENT,))
+    assert handles[0] in visible_handles(recruiter)
+
+
+def test_phase2_search_is_limited_to_job_text_and_cannot_probe_private_fields(people):
+    people.candidate(employer="Secret Employer LLC", blocks=("Hidden Past Firm",))
+    recruiter = people.recruiter()
+    for probe in ("secret", "hidden past", "synthetic", "example.com", "alpha"):
+        assert search(recruiter, query=probe) == []
+    assert len(search(recruiter, query="senior GAAP")) == 1
+    assert search(recruiter, query="senior blockchain") == []
+    assert len(search(recruiter, query="  EXCEL ")) == 1
+    assert search(recruiter, preference="Hybrid") == []
+    assert len(search(recruiter, preference="Remote")) == 1
+
+
+def test_phase2_search_inputs_are_validated_and_paged(people):
+    for n in range(3):
+        people.candidate(headline=f"Accountant number {n}")
+    recruiter = people.recruiter()
+    for kwargs in (
+        {"limit": 0},
+        {"limit": 21},
+        {"offset": -1},
+        {"offset": 101},
+        {"query": "x" * 81},
+        {"query": "bad\nquery"},
+        {"preference": "Anywhere"},
+    ):
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            search(recruiter, **kwargs)
+    with pytest.raises(psycopg.errors.InvalidParameterValue):
+        run_as(recruiter, "select * from public.search_candidates(null, null, null, 0)")
+    first = [row[0] for row in search(recruiter, limit=2)]
+    second = [row[0] for row in search(recruiter, limit=2, offset=2)]
+    assert len(first) == 2 and len(second) == 1 and len(set(first + second)) == 3
+    assert len(run_as(recruiter, "select * from public.search_candidates()")) == 3
+
+
+def test_phase2_search_is_rate_limited_per_recruiter(people):
+    recruiter = people.recruiter()
+    other = people.recruiter()
+    for _ in range(60):
+        search(recruiter)
+    with pytest.raises(psycopg.errors.ConfigurationLimitExceeded):
+        search(recruiter)
+    assert search(other) == []
+    assert admin(
+        "select count(*) from fwp_private.search_log where user_id = %s", (recruiter[0],)
+    ) == [(60,)]
+    admin(
+        "update fwp_private.search_log set created_at = now() - interval '2 hours' where user_id = %s",
+        (recruiter[0],),
+    )
+    search(recruiter)
+
+
+def test_phase2_roles_cannot_use_each_others_functions(people):
+    candidate = people.candidate()
+    recruiter = people.recruiter()
+    for statement in (
+        "select public.save_my_recruiter_firm('Mine Inc', null)",
+        "select public.add_my_client('Mine Inc')",
+        "select public.submit_my_recruiter_profile()",
+        "select * from public.search_candidates()",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(candidate, statement)
+    for statement in ("select public.set_my_discovery(true, 'discovery-v1')",):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(recruiter, statement)
+    assert run_as(recruiter, "select public.my_discovery_status()")[0][0]["blockers"] == [
+        "account_inactive"
+    ]
+
+
+def test_phase2_nobody_can_read_other_peoples_rows_directly(people):
+    candidate = people.candidate()
+    other_candidate = people.candidate()
+    recruiter = people.recruiter()
+    other_recruiter = people.recruiter()
+    candidate_tables = (
+        "candidate_discovery",
+        "candidate_private",
+        "candidate_blocks",
+        "account_profiles",
+        "career_backgrounds",
+    )
+    for table in candidate_tables:
+        for outsider in (recruiter, other_recruiter):
+            assert run_as(outsider, f"select count(*) from public.{table}") == [(0,)]
+    for table in ("recruiter_profiles", "recruiter_clients"):
+        for outsider in (candidate, other_candidate, other_recruiter):
+            if outsider is other_recruiter:
+                continue
+            assert run_as(outsider, f"select count(*) from public.{table}") == [(0,)]
+    assert run_as(other_recruiter, "select user_id from public.recruiter_profiles") == [
+        (uuid.UUID(other_recruiter[0]),)
+    ]
+    assert run_as(candidate, "select count(*) from public.candidate_discovery") == [(1,)]
+    assert run_as(recruiter, "select count(*) from public.member_accounts") == [(1,)]
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "insert into public.recruiter_profiles(user_id, firm_name, firm_key) select user_id, 'X Y', 'x y' from public.member_accounts limit 1",
+        "update public.recruiter_profiles set firm_name = 'Changed'",
+        "delete from public.recruiter_clients",
+        "update public.recruiter_clients set company_key = 'zz'",
+        "insert into public.candidate_discovery(user_id) select user_id from public.member_accounts limit 1",
+        "select * from fwp_private.search_log",
+        "select * from fwp_private.review_log",
+        "select * from fwp_private.company_aliases",
+        "insert into fwp_private.company_aliases values ('aa', 'bb')",
+        "select * from fwp_private.privacy_audit",
+    ],
+)
+def test_phase2_clients_cannot_touch_the_new_tables_directly(people, statement):
+    recruiter = people.recruiter()
+    candidate = people.candidate()
+    for person in (recruiter, candidate):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(person, statement)
+
+
+def test_phase2_anonymous_visitors_have_no_access():
+    with connect() as conn:
+        for statement in (
+            "select * from public.recruiter_profiles",
+            "select * from public.recruiter_clients",
+            "select * from public.candidate_discovery",
+            "select * from public.search_candidates()",
+            "select public.set_my_discovery(true, 'discovery-v1')",
+            "select public.my_discovery_status()",
+            "select public.save_my_recruiter_firm('A B', null)",
+            "select public.add_my_client('A B')",
+            "select public.submit_my_recruiter_profile()",
+        ):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                with conn.transaction():
+                    conn.execute("set local role anon")
+                    conn.execute(statement)
+
+
+def test_phase2_only_the_intended_functions_are_callable_by_clients():
+    """Exact allowlists, so any new function must be granted on purpose."""
+    anon_allowed = {"public.register_pilot_interest"}
+    signed_in_allowed = {
+        "fwp_private.career_readable",
+        "fwp_private.session_is_active",
+        "public.account_session_active",
+        "public.add_my_block",
+        "public.add_my_client",
+        "public.cancel_my_account_deletion",
+        "public.my_discovery_status",
+        "public.onboard_my_account",
+        "public.remove_my_block",
+        "public.remove_my_career_document",
+        "public.remove_my_client",
+        "public.request_my_account_deletion",
+        "public.save_my_career_background",
+        "public.save_my_career_document",
+        "public.save_my_career_workflow",
+        "public.save_my_current_employer",
+        "public.save_my_private_profile",
+        "public.save_my_recruiter_firm",
+        "public.search_candidates",
+        "public.set_my_discovery",
+        "public.submit_my_recruiter_profile",
+    }
+    with connect() as conn:
+        rows = conn.execute(
+            """select n.nspname || '.' || p.proname,
+                      has_function_privilege('anon', p.oid, 'EXECUTE'),
+                      has_function_privilege('authenticated', p.oid, 'EXECUTE'),
+                      has_function_privilege('public', p.oid, 'EXECUTE')
+               from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname in ('fwp_private', 'public')"""
+        ).fetchall()
+    assert {name for name, anon, _, _ in rows if anon} == anon_allowed
+    assert {name for name, _, signed_in, _ in rows if signed_in} == signed_in_allowed
+    assert not [name for name, _, _, everyone in rows if everyone]
+
+
+def test_phase2_operator_functions_are_not_executable_by_clients(people):
+    candidate = people.candidate()
+    for statement in (
+        "select * from fwp_private.admin_pending()",
+        "select fwp_private.admin_set_recruiter_status('a@b.c', 'verified')",
+        "select fwp_private.admin_set_candidate_review('a@b.c', 'approved')",
+        "select fwp_private.admin_add_alias('aa', 'bb')",
+        "select fwp_private.admin_remove_alias('aa')",
+        "select fwp_private.candidate_blockers(gen_random_uuid())",
+        "select fwp_private.recruiter_actor()",
+        "select fwp_private.recruiter_blocked_by(gen_random_uuid(), gen_random_uuid())",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            run_as(candidate, statement)
+
+
+def test_phase2_operator_transitions_are_checked_and_logged(people):
+    recruiter = people.recruiter(verify=False)
+    candidate = people.candidate(approve=False)
+    r, c = email_of(recruiter), email_of(candidate)
+    with pytest.raises(psycopg.errors.Error):
+        admin("select fwp_private.admin_set_recruiter_status(%s, 'verified')", (r,))
+    run_as(recruiter, "select public.submit_my_recruiter_profile()")
+    pending = admin("select kind, email, link from fwp_private.admin_pending() order by kind")
+    assert ("candidate", c, None) in pending
+    assert ("recruiter", r, "https://example.com/zenith") in pending
+    detail = admin(
+        "select summary from fwp_private.admin_pending() where kind = 'recruiter' and email = %s",
+        (r,),
+    )
+    assert "Zenith Search Partners" in detail[0][0] and "Orion Corp" in detail[0][0]
+    for bad in ("approved", "suspended_x"):
+        with pytest.raises(psycopg.errors.Error):
+            admin("select fwp_private.admin_set_recruiter_status(%s, %s)", (r, bad))
+    with pytest.raises(psycopg.errors.Error):
+        admin("select fwp_private.admin_set_recruiter_status('nobody@example.com', 'verified')")
+    with pytest.raises(psycopg.errors.Error):
+        admin("select fwp_private.admin_set_candidate_review(%s, 'pending')", (c,))
+    admin("select fwp_private.admin_set_recruiter_status(%s, 'verified', 'checked link')", (r,))
+    admin("select fwp_private.admin_set_candidate_review(%s, 'approved', 'real person')", (c,))
+    assert admin(
+        "select count(*) from fwp_private.admin_pending() where email in (%s, %s)", (r, c)
+    ) == [(0,)]
+    log = admin(
+        "select kind, from_status, to_status, note from fwp_private.review_log where user_id in (%s, %s) order by id",
+        (recruiter[0], candidate[0]),
+    )
+    assert log == [
+        ("recruiter", "pending", "verified", "checked link"),
+        ("candidate", "pending", "approved", "real person"),
+    ]
+    # Verified status needs a link and a hires-for list even for the operator.
+    admin(
+        "update public.recruiter_profiles set status = 'pending', proof_url = null where user_id = %s",
+        (recruiter[0],),
+    )
+    with pytest.raises(psycopg.errors.Error):
+        admin("select fwp_private.admin_set_recruiter_status(%s, 'verified')", (r,))
+
+
+def test_phase2_audit_log_holds_events_only_and_never_company_names(people):
+    candidate = people.candidate(employer="Audit Secret Firm LLC")
+    recruiter = people.recruiter(clients=("Audit Client Corp",))
+    run_as(candidate, "select public.set_my_discovery(false, null)")
+    events = [
+        e[0]
+        for e in admin(
+            "select event from fwp_private.privacy_audit where user_id = any(%s::uuid[]) order by id",
+            ([candidate[0], recruiter[0]],),
+        )
+    ]
+    assert events == [
+        "current_employer_set",
+        "discovery_enabled",
+        "candidate_approved",
+        "recruiter_firm_saved",
+        "recruiter_client_added",
+        "recruiter_submitted",
+        "recruiter_verified",
+        "discovery_disabled",
+    ]
+    columns = [
+        c[0]
+        for c in admin(
+            """select column_name from information_schema.columns
+           where table_schema = 'fwp_private' and table_name = 'privacy_audit' order by ordinal_position"""
+        )
+    ]
+    assert columns == ["id", "user_id", "event", "created_at"]
+
+
+def test_phase2_deleting_an_account_removes_everything_it_owned(people):
+    candidate = people.candidate()
+    recruiter = people.recruiter()
+    search(recruiter)
+    handle = handle_of(candidate)
+    admin("delete from auth.users where id = %s", (recruiter[0],))
+    admin("delete from auth.users where id = %s", (candidate[0],))
+    counts = admin(
+        """select (select count(*) from public.recruiter_profiles where user_id = %s),
+                  (select count(*) from public.recruiter_clients where user_id = %s),
+                  (select count(*) from fwp_private.search_log where user_id = %s),
+                  (select count(*) from public.candidate_discovery where handle = %s)""",
+        (recruiter[0], recruiter[0], recruiter[0], handle),
+    )
+    assert counts == [(0, 0, 0, 0)]
+
+
+def test_phase2_handles_are_unique_random_and_stable(people):
+    one, two = people.candidate(), people.candidate()
+    assert handle_of(one) != handle_of(two)
+    before = handle_of(one)
+    run_as(one, "select public.set_my_discovery(false, null)")
+    run_as(one, "select public.set_my_discovery(true, 'discovery-v1')")
+    assert handle_of(one) == before

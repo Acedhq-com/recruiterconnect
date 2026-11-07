@@ -2,15 +2,24 @@ import { AuthClient } from "@supabase/auth-js";
 import { PostgrestClient } from "@supabase/postgrest-js";
 import type { User, Session } from "@supabase/auth-js";
 import { z } from "zod";
-import { MAX_BLOCKS } from "../shared/account-schema.js";
-import type { CandidatePrivacy, OnboardAccount, PrivateAccount, PrivateProfile, SavePrivateProfile } from "../shared/account-schema.js";
+import {
+  MAX_BLOCKS, MAX_CLIENTS, SEARCH_PAGE_SIZE, discoveryStatusSchema, recruiterClientRowsSchema,
+  recruiterRowSchema, searchCardSchema,
+} from "../shared/account-schema.js";
+import type {
+  CandidatePrivacy, DiscoveryStatus, OnboardAccount, PrivateAccount, PrivateProfile, RecruiterRecord,
+  SaveRecruiterFirm, SavePrivateProfile, SearchCard, SearchRequest, SetDiscovery,
+} from "../shared/account-schema.js";
 
 export class AccountError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 export type AccountTokens = { accessToken: string; refreshToken: string; expiresIn: number };
 export type VerifiedSession = { user: { id: string; email: string }; tokens: AccountTokens };
-export type AccountRecords = { account: PrivateAccount | null; profile: PrivateProfile | null; privacy: CandidatePrivacy | null };
+export type AccountRecords = {
+  account: PrivateAccount | null; profile: PrivateProfile | null; privacy: CandidatePrivacy | null;
+  recruiter: RecruiterRecord | null; discovery: DiscoveryStatus | null;
+};
 const blockRows = z.array(z.object({
   id: z.uuid(), company_name: z.string().min(2).max(150), source: z.enum(["current_employer", "candidate"]),
 }).strict()).max(MAX_BLOCKS);
@@ -27,9 +36,34 @@ export interface IAccountService {
   saveEmployer(session: VerifiedSession, employer: string): Promise<void>;
   addBlock(session: VerifiedSession, company: string): Promise<void>;
   removeBlock(session: VerifiedSession, id: string): Promise<void>;
+  saveRecruiterFirm(session: VerifiedSession, input: SaveRecruiterFirm): Promise<void>;
+  addClient(session: VerifiedSession, company: string): Promise<void>;
+  removeClient(session: VerifiedSession, id: string): Promise<void>;
+  submitRecruiter(session: VerifiedSession): Promise<void>;
+  setDiscovery(session: VerifiedSession, input: SetDiscovery): Promise<void>;
+  search(session: VerifiedSession, input: SearchRequest): Promise<SearchCard[]>;
   requestDeletion(session: VerifiedSession): Promise<void>;
   cancelDeletion(session: VerifiedSession): Promise<void>;
 }
+
+// Database messages are never relayed. Only these exact, known messages map to
+// friendlier text; anything else falls back to the generic text for its code.
+const KNOWN_MESSAGES: Record<string, { status: number; message: string }> = {
+  "Finish your private draft first": { status: 409,
+    message: "Finish your private draft first: a headline, your current employer, and no blocked company named in your headline or skills." },
+  "Update your details before applying again": { status: 409,
+    message: "This application was not approved. Update your details, then apply again." },
+  "Save your firm first": { status: 409, message: "Save your firm details first." },
+  "Add a link and at least one company you recruit for": { status: 409,
+    message: "Add a link that shows you work at this firm and at least one company you recruit for." },
+  "Review and confirm the current consent again": { status: 409,
+    message: "The consent text changed. Reload, read it, and confirm again." },
+  "This recruiter profile is paused": { status: 403,
+    message: "This recruiter profile is paused. Contact the operator." },
+  "Hires-for list is full": { status: 409,
+    message: `Your hires-for list is full (${MAX_CLIENTS} companies). Remove one before adding another.` },
+  "Search limit reached": { status: 429, message: "You have reached the search limit for this hour. Try again later." },
+};
 
 export class SupabaseAccountService implements IAccountService {
   enabled(): boolean {
@@ -134,6 +168,9 @@ export class SupabaseAccountService implements IAccountService {
       if (profile?.discovery_active) throw new AccountError(503, "Account state needs operator review.");
     }
     let privacy: CandidatePrivacy | null = null;
+    let discovery: DiscoveryStatus | null = null;
+    let recruiter: RecruiterRecord | null = null;
+    if (account?.account_kind === "recruiter") recruiter = await this.recruiterRecord(session);
     if (account?.account_kind === "candidate") {
       const employer = await database.from("candidate_private").select("current_employer")
         .eq("user_id", session.user.id).abortSignal(AbortSignal.timeout(7000)).maybeSingle();
@@ -148,11 +185,37 @@ export class SupabaseAccountService implements IAccountService {
         throw new AccountError(503, "Private account storage is temporarily unavailable.");
       }
       privacy = { current_employer: parsedEmployer.data?.current_employer ?? null, blocks: parsedBlocks.data };
+      const status = await database.rpc("my_discovery_status").abortSignal(AbortSignal.timeout(7000));
+      this.check(status.error);
+      const parsedStatus = discoveryStatusSchema.safeParse(status.data);
+      if (!parsedStatus.success) throw new AccountError(503, "Private account storage is temporarily unavailable.");
+      discovery = parsedStatus.data;
     }
-    return { account, profile, privacy };
+    return { account, profile, privacy, recruiter, discovery };
   }
-  private check(error: { code?: string } | null): void {
+  private async recruiterRecord(session: VerifiedSession): Promise<RecruiterRecord | null> {
+    const database = this.database(session);
+    const row = await database.from("recruiter_profiles")
+      .select("firm_name,proof_url,status,submitted_at,verified_at")
+      .eq("user_id", session.user.id).abortSignal(AbortSignal.timeout(7000)).maybeSingle();
+    this.check(row.error);
+    if (!row.data) return null;
+    const clients = await database.from("recruiter_clients").select("id,company_name")
+      .eq("user_id", session.user.id).order("company_name").abortSignal(AbortSignal.timeout(7000));
+    this.check(clients.error);
+    // Fail closed: a malformed row must not be shown as a trustworthy status.
+    const parsedRow = recruiterRowSchema.safeParse(row.data);
+    const parsedClients = recruiterClientRowsSchema.safeParse(clients.data ?? []);
+    if (!parsedRow.success || !parsedClients.success) {
+      throw new AccountError(503, "Private account storage is temporarily unavailable.");
+    }
+    return { ...parsedRow.data, clients: parsedClients.data };
+  }
+  private check(error: { code?: string; message?: string } | null): void {
     if (!error) return;
+    const known = error.message ? KNOWN_MESSAGES[error.message] : undefined;
+    if (known) throw new AccountError(known.status, known.message);
+    if (error.code === "53400") throw new AccountError(429, "You have reached the search limit for this hour. Try again later.");
     if (error.code === "42501") throw new AccountError(403, "This account cannot perform that action.");
     if (error.code === "40001") throw new AccountError(409, "Your profile changed in another tab. Reload and try again.");
     if (error.code === "22023") throw new AccountError(400, "Please check the account details and try again.");
@@ -181,6 +244,35 @@ export class SupabaseAccountService implements IAccountService {
   }
   removeBlock(session: VerifiedSession, id: string): Promise<void> {
     return this.rpc(session, "remove_my_block", { p_id: id });
+  }
+  saveRecruiterFirm(session: VerifiedSession, input: SaveRecruiterFirm): Promise<void> {
+    return this.rpc(session, "save_my_recruiter_firm", { p_firm: input.firm, p_proof_url: input.proofUrl || null });
+  }
+  addClient(session: VerifiedSession, company: string): Promise<void> {
+    return this.rpc(session, "add_my_client", { p_company: company });
+  }
+  removeClient(session: VerifiedSession, id: string): Promise<void> {
+    return this.rpc(session, "remove_my_client", { p_id: id });
+  }
+  submitRecruiter(session: VerifiedSession): Promise<void> {
+    return this.rpc(session, "submit_my_recruiter_profile", {});
+  }
+  setDiscovery(session: VerifiedSession, input: SetDiscovery): Promise<void> {
+    return this.rpc(session, "set_my_discovery", {
+      p_enabled: input.enabled, p_consent_version: input.enabled ? input.consentVersion : null,
+    });
+  }
+  async search(session: VerifiedSession, input: SearchRequest): Promise<SearchCard[]> {
+    const { data, error } = await this.database(session).rpc("search_candidates", {
+      p_query: input.query || null, p_work_preference: input.workPreference ?? null,
+      p_limit: SEARCH_PAGE_SIZE, p_offset: input.offset ?? 0,
+    }).abortSignal(AbortSignal.timeout(7000));
+    this.check(error);
+    // Strict parse: any column other than the four anonymous fields is an error,
+    // so a database regression can never turn into a data leak.
+    const parsed = z.array(searchCardSchema).max(SEARCH_PAGE_SIZE).safeParse(data ?? []);
+    if (!parsed.success) throw new AccountError(503, "Search is temporarily unavailable.");
+    return parsed.data;
   }
   requestDeletion(session: VerifiedSession): Promise<void> {
     return this.rpc(session, "request_my_account_deletion", {});
